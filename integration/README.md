@@ -83,21 +83,36 @@ TELEGRAM_API_HASH=<your-api-hash>
 
 ## Сборка APK
 
-Канонический prototype APK собирается только через Telegram build type `standalone`:
+Для итеративного device smoke-test используется отдельный быстрый build type `prototype`:
 
 ```powershell
 ./scripts/build-apk.ps1
 ```
 
-Скрипт вызывает `:TMessagesProj_AppStandalone:assembleAfatStandalone`, проверяет наличие локальных Telegram API credentials и отказывается собирать неподготовленный overlay.
+Он вызывает `:TMessagesProj_AppStandalone:assembleAfatPrototype` со следующими свойствами:
 
-`afatDebug` не используется для device acceptance: соответствующий library build включает `DEBUG_VERSION=true` и `DEBUG_PRIVATE_VERSION=true`, тогда как `standalone` использует оба значения `false`.
+- `DEBUG_VERSION=false`;
+- `DEBUG_PRIVATE_VERSION=false`;
+- `minifyEnabled=false` — R8 не запускается;
+- только `arm64-v8a`;
+- Gradle daemon включён;
+- Gradle build cache включён.
 
-Ожидаемый APK:
+Ожидаемый быстрый APK:
 
 ```text
-.work/telegram/TMessagesProj_AppStandalone/build/outputs/apk/afat/standalone/app.apk
+.work/telegram/TMessagesProj_AppStandalone/build/outputs/apk/afat/prototype/app.apk
 ```
+
+Полная acceptance-сборка сохраняется отдельно:
+
+```powershell
+./scripts/build-apk.ps1 -Full
+```
+
+Она вызывает исходный Telegram `:TMessagesProj_AppStandalone:assembleAfatStandalone` с R8/minification и всеми ABI. Это более медленный gate перед финальной проверкой, а не команда для каждой итерации.
+
+`afatDebug` не используется: соответствующий library build включает `DEBUG_VERSION=true` и `DEBUG_PRIVATE_VERSION=true`.
 
 ## Правила
 
