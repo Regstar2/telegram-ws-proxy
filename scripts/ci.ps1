@@ -9,9 +9,12 @@ Set-Location $root
 
 $required = @(
     'README.md',
+    'LICENSE',
+    'NOTICE.md',
     '.gitignore',
     'config/upstream.json',
     'docs/architecture.md',
+    'docs/licensing.md',
     'docs/product/mvp-scope.md',
     'integration/README.md',
     'patches/README.md',
@@ -22,6 +25,19 @@ foreach ($path in $required) {
     if (-not (Test-Path (Join-Path $root $path))) {
         throw "Required project file is missing: $path"
     }
+}
+
+$licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
+if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
+    throw 'Project LICENSE is expected to contain GNU GPL version 3.'
+}
+
+$licensingText = Get-Content (Join-Path $root 'docs/licensing.md') -Raw
+if ($licensingText -notmatch 'GPL-3\.0-only') {
+    throw 'docs/licensing.md does not record the GPL-3.0-only project policy.'
+}
+if ($licensingText -notmatch 'Corresponding Source') {
+    throw 'docs/licensing.md does not record the Corresponding Source release gate.'
 }
 
 $config = Get-Content (Join-Path $root 'config/upstream.json') -Raw | ConvertFrom-Json
