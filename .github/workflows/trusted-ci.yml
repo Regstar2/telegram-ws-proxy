@@ -49,6 +49,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.25.x'
+          cache: false
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
