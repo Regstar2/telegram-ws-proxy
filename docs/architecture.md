@@ -130,6 +130,16 @@ build + smoke
 
 ## 9. Лицензии
 
-Upstream Telegram содержит GNU GPL v2 license. Текущий `Regstar2/tg-ws-proxy-android` заявляет GNU GPL v3.
+Лицензионный аудит завершён и зафиксирован в [licensing.md](licensing.md).
 
-До распространения объединённого APK необходимо определить точное лицензирование каждого интегрируемого компонента и допустимость их объединения. До завершения аудита проект остаётся Prototype без публичного бинарного релиза.
+Принятая модель:
+
+- Telegram for Android используется по его официальной лицензии GNU GPL v2 or later с
+  выбором GPLv3 для объединённого клиента;
+- integration/overlay и TgWsProxy-derived combined code — GNU GPL-3.0-only;
+- third-party компоненты сохраняют собственные совместимые лицензии и notices;
+- публичный APK сопровождается точным полным Corresponding Source собранной версии.
+
+Архитектурное следствие: runtime и integration source должны оставаться воспроизводимыми
+из публичного release source bundle; бинарная `libtgwsproxy.so` без соответствующего
+исходного кода не является допустимым release input.
