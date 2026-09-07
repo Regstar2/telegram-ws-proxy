@@ -24,13 +24,22 @@ $required = @(
     'scripts/fetch-core.ps1',
     'scripts/build-core.ps1',
     'scripts/apply-integration.ps1',
-    'scripts/prepare-integration.ps1'
+    'scripts/prepare-integration.ps1',
+    'scripts/build-apk.ps1'
 )
 
 foreach ($path in $required) {
     if (-not (Test-Path (Join-Path $root $path))) {
         throw "Required project file is missing: $path"
     }
+}
+
+$buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
+if ($buildApkScript -notmatch 'assembleAfatStandalone') {
+    throw 'scripts/build-apk.ps1 must build the afatStandalone variant.'
+}
+if ($buildApkScript -match 'assembleAfatDebug') {
+    throw 'scripts/build-apk.ps1 must not use the Telegram debug/private prototype variant.'
 }
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
@@ -94,6 +103,15 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     $tgnetChanges = @(& git -C $telegramWorktree status --porcelain -- 'TMessagesProj/jni/tgnet/')
     if ($tgnetChanges.Count -gt 0) {
         throw "Prepared integration modified forbidden tgnet paths: $($tgnetChanges -join ', ')"
+    }
+
+    $preparedBuildVarsPath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
+    $preparedBuildVars = Get-Content $preparedBuildVarsPath -Raw
+    if ($preparedBuildVars -notmatch 'public static boolean SUPPORTS_PASSKEYS = false;') {
+        throw 'Prepared Telegram fork still enables official-app-only passkeys.'
+    }
+    if ($preparedBuildVars -notmatch 'BuildConfig\.TELEGRAM_API_ID') {
+        throw 'Prepared Telegram BuildVars does not use injected API credentials.'
     }
 
     $changes = @(
