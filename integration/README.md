@@ -13,6 +13,8 @@ integration/telegram/TgWsProxyBootstrap.java
 и четырёх точечных изменений upstream:
 
 ```text
+TMessagesProj/build.gradle
+TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
 TMessagesProj_AppStandalone/build.gradle
 TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/ApplicationLoaderImpl.java
 ```
