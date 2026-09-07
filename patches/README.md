@@ -1,14 +1,19 @@
 # Upstream patches
 
-Эта директория предназначена только для минимальных воспроизводимых изменений поверх чистого `DrKLO/Telegram`.
+Для текущего Prototype отдельный `.patch`-файл не используется.
 
-Требования к patch-файлам:
+Интеграция применяется детерминированным overlay-скриптом:
 
-- применяются к commit из `config/upstream.json`;
-- не затрагивают `TMessagesProj/jni/tgnet/`;
-- не содержат generated/binary artifacts;
-- каждый patch имеет одну понятную причину;
-- при невозможности чистого применения sync должен падать, а не молча продолжаться;
-- после появления альтернативы через отдельный module/overlay patch должен уменьшаться или удаляться.
+```text
+scripts/apply-integration.ps1
+```
 
-В Prototype предпочтительнее 1–2 небольших patch-файла, чем долгоживущая копия Telegram source tree.
+Он использует точные upstream anchors и падает, если они изменились. Это сохраняет те же свойства, которые требовались от patch-файла:
+
+- применяется только к commit из `config/upstream.json`;
+- не затрагивает `TMessagesProj/jni/tgnet/`;
+- не содержит generated/binary artifacts;
+- не использует fuzzy/manual resolution;
+- проверяет diff budget.
+
+Если в будущем overlay перестанет быть удобнее unified patch, эта директория может снова использоваться для минимальных patch-файлов.
