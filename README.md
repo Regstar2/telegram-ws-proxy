@@ -140,7 +140,7 @@ cd telegram-ws-proxy
 |---|---|
 | Репозиторий и scope | Готово |
 | Upstream fetch script | Реализован, первый локальный запуск не выполнен |
-| Trusted CI | Добавлен, первый workflow run не выполнен |
+| GitHub-hosted CI | Добавлен: `ubuntu-latest`, без self-hosted runner |
 | Лицензионный аудит Telegram ↔ TgWsProxy | Решён: GPL-3.0-only + third-party notices |
 | Выделение `tgwsproxy-core` | Не начато |
 | Telegram integration layer | Не начато |
