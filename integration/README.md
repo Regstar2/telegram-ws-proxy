@@ -78,6 +78,27 @@ TELEGRAM_API_HASH=<your-api-hash>
 
 Значения credentials не выводятся скриптами в лог. Не добавляйте реальные `api_id` / `api_hash` в Issue, PR, commit или tracked-файлы.
 
+Для стороннего клиента overlay также устанавливает `BuildVars.SUPPORTS_PASSKEYS = false`. Upstream помечает passkey support как функцию только для official app IDs; оставлять её включённой в fork нельзя.
+
+
+## Сборка APK
+
+Канонический prototype APK собирается только через Telegram build type `standalone`:
+
+```powershell
+./scripts/build-apk.ps1
+```
+
+Скрипт вызывает `:TMessagesProj_AppStandalone:assembleAfatStandalone`, проверяет наличие локальных Telegram API credentials и отказывается собирать неподготовленный overlay.
+
+`afatDebug` не используется для device acceptance: соответствующий library build включает `DEBUG_VERSION=true` и `DEBUG_PRIVATE_VERSION=true`, тогда как `standalone` использует оба значения `false`.
+
+Ожидаемый APK:
+
+```text
+.work/telegram/TMessagesProj_AppStandalone/build/outputs/apk/afat/standalone/app.apk
+```
+
 ## Правила
 
 - reusable runtime не зависит от Telegram;
