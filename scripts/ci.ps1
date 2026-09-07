@@ -46,91 +46,21 @@ if ($licensingText -notmatch 'Corresponding Source') {
     throw 'docs/licensing.md does not record the Corresponding Source release gate.'
 }
 
-$config = Get-Content (Join-Path $root 'config/upstream.json') -Raw | ConvertFrom-Json
-$commit = [string]$config.pinnedCommit
-$coreConfig = Get-Content (Join-Path $root 'config/core.json') -Raw | ConvertFrom-Json
-$coreCommit = [string]$coreConfig.pinnedCommit
+$upstream = Get-Content (Join-Path $root 'config/upstream.json') -Raw | ConvertFrom-Json
+$core = Get-Content (Join-Path $root 'config/core.json') -Raw | ConvertFrom-Json
+$telegramCommit = [string]$upstream.pinnedCommit
+$coreCommit = [string]$core.pinnedCommit
 
-if ([string]::IsNullOrWhiteSpace([string]$config.repository)) {
+if ([string]::IsNullOrWhiteSpace([string]$upstream.repository)) {
     throw 'Upstream repository is empty.'
 }
-
-if ($commit -notmatch '^[0-9a-f]{40}
-
-if (Get-Command git -ErrorAction SilentlyContinue) {
-    $forbiddenTracked = @(
-        (& git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**') |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-    )
-
-    if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
-
-    if ($forbiddenTracked.Count -gt 0) {
-        throw "Forbidden private/generated files are tracked: $($forbiddenTracked -join ', ')"
-    }
+if ($telegramCommit -notmatch '^[0-9a-f]{40}$') {
+    throw "Invalid pinned Telegram commit: '$telegramCommit'"
 }
-
-$patchFiles = @(Get-ChildItem (Join-Path $root 'patches') -File -Filter '*.patch' -ErrorAction SilentlyContinue)
-foreach ($patch in $patchFiles) {
-    $content = Get-Content $patch.FullName -Raw
-    if ($content -match 'TMessagesProj/jni/tgnet/') {
-        throw "Patch modifies forbidden tgnet path: $($patch.Name)"
-    }
-}
-
-$worktree = Join-Path $root '.work/telegram'
-if (Test-Path (Join-Path $worktree '.git')) {
-    $actual = (& git -C $worktree rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to read upstream worktree HEAD.' }
-    if ($actual -ne $commit) {
-        throw "Local Telegram checkout is not pinned: $actual != $commit"
-    }
-}
-
-Write-Host 'Repository checks passed.'
-Write-Host "Pinned Telegram commit: $commit"
-Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
-) {
-    throw "Invalid pinned Telegram commit: '$commit'"
-}
-if ([string]::IsNullOrWhiteSpace([string]$coreConfig.repository)) {
+if ([string]::IsNullOrWhiteSpace([string]$core.repository)) {
     throw 'Core repository is empty.'
 }
-if ($coreCommit -notmatch '^[0-9a-f]{40}
-
-if (Get-Command git -ErrorAction SilentlyContinue) {
-    $forbiddenTracked = @(
-        (& git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**') |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-    )
-
-    if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
-
-    if ($forbiddenTracked.Count -gt 0) {
-        throw "Forbidden private/generated files are tracked: $($forbiddenTracked -join ', ')"
-    }
-}
-
-$patchFiles = @(Get-ChildItem (Join-Path $root 'patches') -File -Filter '*.patch' -ErrorAction SilentlyContinue)
-foreach ($patch in $patchFiles) {
-    $content = Get-Content $patch.FullName -Raw
-    if ($content -match 'TMessagesProj/jni/tgnet/') {
-        throw "Patch modifies forbidden tgnet path: $($patch.Name)"
-    }
-}
-
-$worktree = Join-Path $root '.work/telegram'
-if (Test-Path (Join-Path $worktree '.git')) {
-    $actual = (& git -C $worktree rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to read upstream worktree HEAD.' }
-    if ($actual -ne $commit) {
-        throw "Local Telegram checkout is not pinned: $actual != $commit"
-    }
-}
-
-Write-Host 'Repository checks passed.'
-Write-Host "Pinned Telegram commit: $commit"
-) {
+if ($coreCommit -notmatch '^[0-9a-f]{40}$') {
     throw "Invalid pinned core commit: '$coreCommit'"
 }
 
@@ -139,9 +69,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         (& git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**') |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     )
-
     if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
-
     if ($forbiddenTracked.Count -gt 0) {
         throw "Forbidden private/generated files are tracked: $($forbiddenTracked -join ', ')"
     }
@@ -149,20 +77,44 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 
 $patchFiles = @(Get-ChildItem (Join-Path $root 'patches') -File -Filter '*.patch' -ErrorAction SilentlyContinue)
 foreach ($patch in $patchFiles) {
-    $content = Get-Content $patch.FullName -Raw
-    if ($content -match 'TMessagesProj/jni/tgnet/') {
+    $patchContent = Get-Content $patch.FullName -Raw
+    if ($patchContent -match 'TMessagesProj/jni/tgnet/') {
         throw "Patch modifies forbidden tgnet path: $($patch.Name)"
     }
 }
 
-$worktree = Join-Path $root '.work/telegram'
-if (Test-Path (Join-Path $worktree '.git')) {
-    $actual = (& git -C $worktree rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to read upstream worktree HEAD.' }
-    if ($actual -ne $commit) {
-        throw "Local Telegram checkout is not pinned: $actual != $commit"
+$telegramWorktree = Join-Path $root '.work/telegram'
+if (Test-Path (Join-Path $telegramWorktree '.git')) {
+    $actual = (& git -C $telegramWorktree rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to read Telegram worktree HEAD.' }
+    if ($actual -ne $telegramCommit) {
+        throw "Local Telegram checkout is not pinned: $actual != $telegramCommit"
+    }
+
+    $tgnetChanges = @(& git -C $telegramWorktree status --porcelain -- 'TMessagesProj/jni/tgnet/')
+    if ($tgnetChanges.Count -gt 0) {
+        throw "Prepared integration modified forbidden tgnet paths: $($tgnetChanges -join ', ')"
+    }
+
+    $changes = @(
+        & git -C $telegramWorktree status --porcelain |
+            ForEach-Object { if ($_.Length -ge 4) { $_.Substring(3).Trim('"') } } |
+            Where-Object { $_ -and -not $_.StartsWith('.tgwsproxy/') }
+    )
+    if ($changes.Count -gt 5) {
+        throw "Prepared integration exceeds the 5-file source diff budget: $($changes.Count)"
+    }
+}
+
+$coreWorktree = Join-Path $root '.work/tgwsproxy-core'
+if (Test-Path (Join-Path $coreWorktree '.git')) {
+    $actualCore = (& git -C $coreWorktree rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to read core worktree HEAD.' }
+    if ($actualCore -ne $coreCommit) {
+        throw "Local core checkout is not pinned: $actualCore != $coreCommit"
     }
 }
 
 Write-Host 'Repository checks passed.'
-Write-Host "Pinned Telegram commit: $commit"
+Write-Host "Pinned Telegram commit: $telegramCommit"
+Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
