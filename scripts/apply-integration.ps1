@@ -95,8 +95,17 @@ if ($buildVars -notmatch [regex]::Escape('BuildConfig.TELEGRAM_API_ID')) {
     $count = ([regex]::Matches($buildVars, [regex]::Escape($apiVarsMarker))).Count
     if ($count -ne 1) { throw "Telegram BuildVars API anchor count is $count; expected 1." }
     $buildVars = $buildVars.Replace($apiVarsMarker, $apiVarsBlock)
-    Set-Content -Path $buildVarsPath -Value $buildVars -NoNewline
 }
+
+$passkeyMarker = '    public static boolean SUPPORTS_PASSKEYS = true;'
+$passkeyBlock = '    public static boolean SUPPORTS_PASSKEYS = false;'
+if ($buildVars -notmatch [regex]::Escape($passkeyBlock)) {
+    $count = ([regex]::Matches($buildVars, [regex]::Escape($passkeyMarker))).Count
+    if ($count -ne 1) { throw "Telegram passkey anchor count is $count; expected 1." }
+    $buildVars = $buildVars.Replace($passkeyMarker, $passkeyBlock)
+}
+
+Set-Content -Path $buildVarsPath -Value $buildVars -NoNewline
 
 $loaderPath = Join-Path $telegram 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/ApplicationLoaderImpl.java'
 $loader = Get-Content $loaderPath -Raw
