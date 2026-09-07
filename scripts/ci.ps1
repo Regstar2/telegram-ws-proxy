@@ -53,8 +53,9 @@ if ($commit -notmatch '^[0-9a-f]{40}$') {
 
 if (Get-Command git -ErrorAction SilentlyContinue) {
     $forbiddenTracked = @(
-        & git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**'
-    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        (& git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**') |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
 
     if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
 
