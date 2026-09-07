@@ -110,6 +110,8 @@ cd telegram-ws-proxy
 
 После `prepare-integration.ps1` чистый pinned Telegram получает reproducible overlay и локально собранный `tgwsproxy-core` AAR. Полная APK-сборка и device smoke test остаются задачей следующего этапа.
 
+Для локальной сборки с собственными Telegram `api_id` / `api_hash` используйте переменные `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` либо локальный `.work/telegram/local.properties`; значения не должны попадать в Git. Подробности: [integration/README.md](integration/README.md).
+
 ## Архитектурные ограничения
 
 Для Prototype действуют жёсткие ограничения:
@@ -151,7 +153,7 @@ cd telegram-ws-proxy
 | GitHub-hosted CI | Добавлен: `ubuntu-latest`, без self-hosted runner |
 | Лицензионный аудит Telegram ↔ TgWsProxy | Решён: GPL-3.0-only + third-party notices |
 | Выделение `tgwsproxy-core` | Готово: отдельный repo/AAR, Android API 21+ |
-| Telegram integration layer | Реализован: 3 upstream-файла, CI воспроизводимости |
+| Telegram integration layer | Реализован: 5 upstream-файлов, собственные API credentials без хранения секретов, CI воспроизводимости |
 | Первый APK | Не начато |
 | Device smoke test | Не начато |
 | Upstream auto-sync | Post-MVP |
