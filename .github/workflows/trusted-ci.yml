@@ -1,7 +1,7 @@
-name: Trusted CI
+name: CI
 
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - synchronize
@@ -13,30 +13,15 @@ permissions:
   contents: read
 
 jobs:
-  trusted-ci:
-    name: Trusted Windows CI
-    if: >
-      github.actor == 'Regstar2' &&
-      github.triggering_actor == 'Regstar2' &&
-      (
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'pull_request_target' &&
-          github.event.pull_request.user.login == 'Regstar2' &&
-          github.event.pull_request.head.repo.full_name == github.repository
-        )
-      )
-    runs-on:
-      - self-hosted
-      - Windows
-      - X64
+  ci:
+    name: Public CI
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout trusted ref
+      - name: Checkout
         uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: Run project CI
