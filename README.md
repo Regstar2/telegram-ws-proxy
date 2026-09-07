@@ -60,8 +60,12 @@ tgwsproxy-core
 config/
   upstream.json          зафиксированный upstream Telegram
 
+LICENSE                  GNU GPL v3.0
+NOTICE.md                third-party notices и правила атрибуции
+
 docs/
   architecture.md        границы интеграции и правила минимального diff
+  licensing.md           аудит лицензий и модель распространения
   product/
     mvp-scope.md         scope Prototype/MVP
 
@@ -137,7 +141,7 @@ cd telegram-ws-proxy
 | Репозиторий и scope | Готово |
 | Upstream fetch script | Реализован, первый локальный запуск не выполнен |
 | Trusted CI | Добавлен, первый workflow run не выполнен |
-| Лицензионный аудит Telegram ↔ TgWsProxy | Требуется |
+| Лицензионный аудит Telegram ↔ TgWsProxy | Решён: GPL-3.0-only + third-party notices |
 | Выделение `tgwsproxy-core` | Не начато |
 | Telegram integration layer | Не начато |
 | Первый APK | Не начато |
@@ -146,11 +150,19 @@ cd telegram-ws-proxy
 
 ## Лицензирование
 
-Лицензия итогового клиента пока **не зафиксирована**.
+Проект использует **GNU GPL-3.0-only** для собственного integration/overlay и
+TgWsProxy-derived combined code.
 
-Telegram Android распространяется по GPL v2, а текущий `tg-ws-proxy-android` — по GPL v3. До распространения объединённого APK необходимо отдельно проверить совместимость лицензий, происхождение интегрируемого кода и требования к публикации исходников.
+Telegram for Android официально распространяется по **GNU GPL v2 or later**. Для
+объединённого клиента используется возможность выбрать GPLv3. Flowseal runtime origin
+(MIT), Go/`x/crypto` (BSD 3-Clause) и JNA при выборе Apache-2.0 совместимы с GPLv3.
 
-Это считается blocker для публичного релиза, но не мешает провести ограниченный локальный Prototype.
+Для публичного APK обязательно публиковать точный полный Corresponding Source той же
+сборки и сохранять third-party notices. Разработка может оставаться overlay-based, но
+release не должен полагаться только на внешний upstream + patch.
+
+Подробности и зафиксированные ревизии: [docs/licensing.md](docs/licensing.md).  
+Third-party notices: [NOTICE.md](NOTICE.md).
 
 ## Связанные проекты
 
