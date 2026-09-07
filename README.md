@@ -50,7 +50,8 @@ tgwsproxy-core
 - Telegram Android: [DrKLO/Telegram](https://github.com/DrKLO/Telegram)
 - ветка: `master`
 - исходная точка Prototype: `62b56a07ca7e30e39f7fd00a6728d6bbd716ca1c` — Telegram 12.10.1 (7038), 25 августа 2026 года
-- TgWsProxy runtime: [Regstar2/tg-ws-proxy-android](https://github.com/Regstar2/tg-ws-proxy-android)
+- TgWsProxy core: [Regstar2/tgwsproxy-core](https://github.com/Regstar2/tgwsproxy-core), pinned через `config/core.json`
+- исходный standalone runtime: [Regstar2/tg-ws-proxy-android](https://github.com/Regstar2/tg-ws-proxy-android)
 
 Полная копия Telegram намеренно не хранится в этом репозитории. Скрипты получают upstream отдельно в локальную рабочую директорию.
 
@@ -59,6 +60,7 @@ tgwsproxy-core
 ```text
 config/
   upstream.json          зафиксированный upstream Telegram
+  core.json              зафиксированный tgwsproxy-core
 
 LICENSE                  GNU GPL v3.0
 NOTICE.md                third-party notices и правила атрибуции
@@ -70,13 +72,19 @@ docs/
     mvp-scope.md         scope Prototype/MVP
 
 integration/
-  README.md              будущий Telegram adapter / Android integration layer
+  README.md              описание integration layer
+  telegram/
+    TgWsProxyBootstrap.java
 
 patches/
   README.md              минимальные патчи поверх upstream Telegram
 
 scripts/
   fetch-upstream.ps1     получение зафиксированного Telegram
+  fetch-core.ps1         получение зафиксированного tgwsproxy-core
+  build-core.ps1         сборка release AAR
+  apply-integration.ps1  применение deterministic overlay
+  prepare-integration.ps1 полный fetch → build → apply
   ci.ps1                 проверки репозитория
 ```
 
@@ -84,13 +92,13 @@ scripts/
 
 ## Быстрый старт
 
-Требуется Git и PowerShell 7+.
+Для базовых проверок требуется Git и PowerShell 7+. Для полной подготовки интеграции нужны JDK 17, Go 1.25, Android SDK/NDK и Gradle 8.2.1.
 
 ```powershell
 git clone https://github.com/Regstar2/telegram-ws-proxy.git
 cd telegram-ws-proxy
 
-./scripts/fetch-upstream.ps1
+./scripts/prepare-integration.ps1 -Force
 ./scripts/ci.ps1
 ```
 
@@ -100,7 +108,7 @@ cd telegram-ws-proxy
 .work/telegram/
 ```
 
-На текущей стадии скрипт только получает точный upstream commit. Наложение интеграции и сборка APK появятся в следующих implementation issues.
+После `prepare-integration.ps1` чистый pinned Telegram получает reproducible overlay и локально собранный `tgwsproxy-core` AAR. Полная APK-сборка и device smoke test остаются задачей следующего этапа.
 
 ## Архитектурные ограничения
 
@@ -142,8 +150,8 @@ cd telegram-ws-proxy
 | Upstream fetch script | Реализован, первый локальный запуск не выполнен |
 | GitHub-hosted CI | Добавлен: `ubuntu-latest`, без self-hosted runner |
 | Лицензионный аудит Telegram ↔ TgWsProxy | Решён: GPL-3.0-only + third-party notices |
-| Выделение `tgwsproxy-core` | Не начато |
-| Telegram integration layer | Не начато |
+| Выделение `tgwsproxy-core` | Готово: отдельный repo/AAR, Android API 21+ |
+| Telegram integration layer | Реализован: 3 upstream-файла, CI воспроизводимости |
 | Первый APK | Не начато |
 | Device smoke test | Не начато |
 | Upstream auto-sync | Post-MVP |
@@ -166,7 +174,8 @@ Third-party notices: [NOTICE.md](NOTICE.md).
 
 ## Связанные проекты
 
-- [Regstar2/tg-ws-proxy-android](https://github.com/Regstar2/tg-ws-proxy-android) — существующее отдельное Android-приложение.
+- [Regstar2/tgwsproxy-core](https://github.com/Regstar2/tgwsproxy-core) — переиспользуемый Android AAR/native runtime.
+- [Regstar2/tg-ws-proxy-android](https://github.com/Regstar2/tg-ws-proxy-android) — существующее отдельное Android-приложение; пока не мигрировано на core.
 - [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) — upstream WebSocket runtime.
 - [DrKLO/Telegram](https://github.com/DrKLO/Telegram) — официальный open-source Android-клиент Telegram.
 

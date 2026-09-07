@@ -13,8 +13,23 @@ permissions:
   contents: read
 
 jobs:
-  ci:
-    name: Public CI
+  repository:
+    name: Repository checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run project checks
+        shell: pwsh
+        run: ./scripts/ci.ps1
+
+  integration:
+    name: Reproduce Telegram overlay
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -24,6 +39,34 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run project CI
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: false
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: sdkmanager "platforms;android-35" "ndk;27.2.12479018"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2.1'
+
+      - name: Reproduce integration
+        shell: pwsh
+        run: ./scripts/prepare-integration.ps1 -Force
+
+      - name: Re-run repository checks on prepared tree
         shell: pwsh
         run: ./scripts/ci.ps1

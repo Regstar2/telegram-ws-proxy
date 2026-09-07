@@ -143,3 +143,28 @@ build + smoke
 Архитектурное следствие: runtime и integration source должны оставаться воспроизводимыми
 из публичного release source bundle; бинарная `libtgwsproxy.so` без соответствующего
 исходного кода не является допустимым release input.
+
+
+## 10. Реализованный Prototype overlay
+
+Текущий integration layer использует pinned `tgwsproxy-core` и изменяет только:
+
+```text
+TMessagesProj_AppStandalone/build.gradle
+TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/ApplicationLoaderImpl.java
+TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java
+```
+
+AAR собирается из `config/core.json` и копируется только в локальную
+`.work/telegram/.tgwsproxy/`. Generated binary не входит в source diff.
+
+`TgWsProxyBootstrap`:
+
+1. генерирует и сохраняет локальный 16-byte MTProto secret;
+2. запускает `TgWsProxyCore` на `127.0.0.1:1443`;
+3. сохраняет штатные Telegram proxy preferences;
+4. вызывает `ConnectionsManager.setProxySettings(...)`;
+5. при ошибке core отключает только ранее управляемый localhost proxy.
+
+Overlay применяется `scripts/apply-integration.ps1` через точные anchor-замены.
+Если upstream изменит anchor, процесс завершается ошибкой вместо fuzzy merge.
