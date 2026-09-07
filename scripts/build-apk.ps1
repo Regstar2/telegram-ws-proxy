@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$TelegramPath = '.work/telegram'
+    [string]$TelegramPath = '.work/telegram',
+    [switch]$Full
 )
 
 Set-StrictMode -Version Latest
@@ -38,23 +39,39 @@ if ($null -eq $gradle) {
     throw 'Gradle was not found in PATH.'
 }
 
+if ($Full) {
+    $task = ':TMessagesProj_AppStandalone:assembleAfatStandalone'
+    $variant = 'standalone'
+    $mode = 'full standalone'
+    $gradleArgs = @($task, '--daemon', '--build-cache')
+} else {
+    $task = ':TMessagesProj_AppStandalone:assembleAfatPrototype'
+    $variant = 'prototype'
+    $mode = 'fast ARM64 prototype'
+    $gradleArgs = @($task, '--daemon', '--build-cache', '-PTGWS_PROXY_ARM64_ONLY=true')
+}
+
+Write-Host "Building Telegram APK mode: $mode"
+Write-Host "Gradle task: $task"
+
 Push-Location $telegram
 try {
-    & $gradle.Source ':TMessagesProj_AppStandalone:assembleAfatStandalone' '--no-daemon'
+    & $gradle.Source @gradleArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "Telegram standalone APK build failed with exit code $LASTEXITCODE."
+        throw "Telegram APK build failed with exit code $LASTEXITCODE."
     }
 }
 finally {
     Pop-Location
 }
 
-$apk = Join-Path $telegram 'TMessagesProj_AppStandalone/build/outputs/apk/afat/standalone/app.apk'
+$apk = Join-Path $telegram "TMessagesProj_AppStandalone/build/outputs/apk/afat/$variant/app.apk"
 if (-not (Test-Path $apk)) {
-    throw "Standalone APK was not produced at the expected path: $apk"
+    throw "Telegram APK was not produced at the expected path: $apk"
 }
 
 $apkItem = Get-Item $apk
-Write-Host 'Standalone Telegram prototype APK built successfully.'
+Write-Host 'Telegram APK built successfully.'
+Write-Host "Mode: $mode"
 Write-Host "APK: $($apkItem.FullName)"
 Write-Host "Size: $($apkItem.Length) bytes"
