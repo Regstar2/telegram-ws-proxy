@@ -85,6 +85,7 @@ scripts/
   build-core.ps1         сборка release AAR
   apply-integration.ps1  применение deterministic overlay
   prepare-integration.ps1 полный fetch → build → apply
+  build-apk.ps1          сборка canonical afatStandalone prototype APK
   ci.ps1                 проверки репозитория
 ```
 
@@ -108,7 +109,7 @@ cd telegram-ws-proxy
 .work/telegram/
 ```
 
-После `prepare-integration.ps1` чистый pinned Telegram получает reproducible overlay и локально собранный `tgwsproxy-core` AAR. Полная APK-сборка и device smoke test остаются задачей следующего этапа.
+После `prepare-integration.ps1` чистый pinned Telegram получает reproducible overlay и локально собранный `tgwsproxy-core` AAR. Prototype APK собирается через `./scripts/build-apk.ps1`, который использует Telegram `afatStandalone`, а не internal debug/private variant.
 
 Для локальной сборки с собственными Telegram `api_id` / `api_hash` используйте переменные `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` либо локальный `.work/telegram/local.properties`; значения не должны попадать в Git. Подробности: [integration/README.md](integration/README.md).
 
@@ -154,8 +155,8 @@ cd telegram-ws-proxy
 | Лицензионный аудит Telegram ↔ TgWsProxy | Решён: GPL-3.0-only + third-party notices |
 | Выделение `tgwsproxy-core` | Готово: отдельный repo/AAR, Android API 21+ |
 | Telegram integration layer | Реализован: 5 upstream-файлов, собственные API credentials без хранения секретов, CI воспроизводимости |
-| Первый APK | Не начато |
-| Device smoke test | Не начато |
+| Первый APK | Собирается локально; canonical variant переведён на `afatStandalone` |
+| Device smoke test | В процессе: предыдущий debug APK имел unusable login UI; требуется повторная проверка standalone APK |
 | Upstream auto-sync | Post-MVP |
 
 ## Лицензирование
