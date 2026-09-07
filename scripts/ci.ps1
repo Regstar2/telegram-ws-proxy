@@ -35,11 +35,29 @@ foreach ($path in $required) {
 }
 
 $buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
+if ($buildApkScript -notmatch 'assembleAfatPrototype') {
+    throw 'scripts/build-apk.ps1 must default to the fast afatPrototype variant.'
+}
 if ($buildApkScript -notmatch 'assembleAfatStandalone') {
-    throw 'scripts/build-apk.ps1 must build the afatStandalone variant.'
+    throw 'scripts/build-apk.ps1 must preserve the full afatStandalone variant.'
+}
+if ($buildApkScript -notmatch '\[switch\]\$Full') {
+    throw 'scripts/build-apk.ps1 must expose the -Full standalone build switch.'
+}
+if ($buildApkScript -notmatch '--build-cache') {
+    throw 'scripts/build-apk.ps1 must enable the Gradle build cache.'
+}
+if ($buildApkScript -notmatch '--daemon') {
+    throw 'scripts/build-apk.ps1 must keep the Gradle daemon enabled for iterative builds.'
+}
+if ($buildApkScript -notmatch 'TGWS_PROXY_ARM64_ONLY=true') {
+    throw 'scripts/build-apk.ps1 must restrict fast prototype builds to ARM64.'
+}
+if ($buildApkScript -match '--no-daemon') {
+    throw 'scripts/build-apk.ps1 must not disable the Gradle daemon.'
 }
 if ($buildApkScript -match 'assembleAfatDebug') {
-    throw 'scripts/build-apk.ps1 must not use the Telegram debug/private prototype variant.'
+    throw 'scripts/build-apk.ps1 must not use the Telegram debug/private variant.'
 }
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
@@ -112,6 +130,73 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($preparedBuildVars -notmatch 'BuildConfig\.TELEGRAM_API_ID') {
         throw 'Prepared Telegram BuildVars does not use injected API credentials.'
+    }
+
+    $preparedCoreBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj/build.gradle') -Raw
+    if ($preparedCoreBuild -notmatch '(?m)^        prototype \{        & git -C $telegramWorktree status --porcelain |
+            ForEach-Object { if ($_.Length -ge 4) { $_.Substring(3).Trim('"') } } |
+            Where-Object { $_ -and -not $_.StartsWith('.tgwsproxy/') }
+    )
+    if ($changes.Count -gt 5) {
+        throw "Prepared integration exceeds the 5-file source diff budget: $($changes.Count)"
+    }
+}
+
+$coreWorktree = Join-Path $root '.work/tgwsproxy-core'
+if (Test-Path (Join-Path $coreWorktree '.git')) {
+    $actualCore = (& git -C $coreWorktree rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to read core worktree HEAD.' }
+    if ($actualCore -ne $coreCommit) {
+        throw "Local core checkout is not pinned: $actualCore != $coreCommit"
+    }
+}
+
+Write-Host 'Repository checks passed.'
+Write-Host "Pinned Telegram commit: $telegramCommit"
+Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
+) {
+        throw 'Prepared Telegram core is missing the fast prototype build type.'
+    }
+    if ($preparedCoreBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false[\s\S]*?DEBUG_VERSION", "false"[\s\S]*?DEBUG_PRIVATE_VERSION", "false"') {
+        throw 'Prepared Telegram core prototype must be non-minified with debug/private flags disabled.'
+    }
+    if ($preparedCoreBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
+        throw 'Prepared Telegram core is missing the ARM64-only prototype filter.'
+    }
+
+    $preparedAppBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/build.gradle') -Raw
+    if ($preparedAppBuild -notmatch '(?m)^        prototype \{        & git -C $telegramWorktree status --porcelain |
+            ForEach-Object { if ($_.Length -ge 4) { $_.Substring(3).Trim('"') } } |
+            Where-Object { $_ -and -not $_.StartsWith('.tgwsproxy/') }
+    )
+    if ($changes.Count -gt 5) {
+        throw "Prepared integration exceeds the 5-file source diff budget: $($changes.Count)"
+    }
+}
+
+$coreWorktree = Join-Path $root '.work/tgwsproxy-core'
+if (Test-Path (Join-Path $coreWorktree '.git')) {
+    $actualCore = (& git -C $coreWorktree rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to read core worktree HEAD.' }
+    if ($actualCore -ne $coreCommit) {
+        throw "Local core checkout is not pinned: $actualCore != $coreCommit"
+    }
+}
+
+Write-Host 'Repository checks passed.'
+Write-Host "Pinned Telegram commit: $telegramCommit"
+Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
+) {
+        throw 'Prepared Telegram app is missing the fast prototype build type.'
+    }
+    if ($preparedAppBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false') {
+        throw 'Prepared Telegram app prototype must disable minification.'
+    }
+    if ($preparedAppBuild -notmatch 'sourceSets\.prototype') {
+        throw 'Prepared Telegram app prototype must use the standalone manifest.'
+    }
+    if ($preparedAppBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
+        throw 'Prepared Telegram app is missing the ARM64-only prototype filter.'
     }
 
     $changes = @(
