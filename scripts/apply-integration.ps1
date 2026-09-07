@@ -45,6 +45,59 @@ if ($build -notmatch [regex]::Escape("tgwsproxy-core.aar")) {
     Set-Content -Path $buildPath -Value $build -NoNewline
 }
 
+$coreBuildPath = Join-Path $telegram 'TMessagesProj/build.gradle'
+$coreBuild = Get-Content $coreBuildPath -Raw
+$apiGradleMarker = @'
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 36
+'@.TrimEnd()
+$apiGradleBlock = @'
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 36
+
+        def telegramApiId = System.getenv('TELEGRAM_API_ID') ?: getProps('TELEGRAM_API_ID')
+        def telegramApiHash = System.getenv('TELEGRAM_API_HASH') ?: getProps('TELEGRAM_API_HASH')
+        if (!telegramApiId) {
+            telegramApiId = '4'
+        }
+        if (!telegramApiHash) {
+            telegramApiHash = '014b35b6184100b085b0d0572f9b5103'
+        }
+        if (!(telegramApiId ==~ /\d+/)) {
+            throw new GradleException('TELEGRAM_API_ID must contain decimal digits only.')
+        }
+        if (!(telegramApiHash ==~ /[0-9a-fA-F]{32}/)) {
+            throw new GradleException('TELEGRAM_API_HASH must contain exactly 32 hexadecimal characters.')
+        }
+        buildConfigField "int", "TELEGRAM_API_ID", telegramApiId
+        buildConfigField "String", "TELEGRAM_API_HASH", "\"${telegramApiHash}\""
+'@.TrimEnd()
+if ($coreBuild -notmatch [regex]::Escape('TELEGRAM_API_ID')) {
+    $count = ([regex]::Matches($coreBuild, [regex]::Escape($apiGradleMarker))).Count
+    if ($count -ne 1) { throw "Telegram API Gradle anchor count is $count; expected 1." }
+    $coreBuild = $coreBuild.Replace($apiGradleMarker, $apiGradleBlock)
+    Set-Content -Path $coreBuildPath -Value $coreBuild -NoNewline
+}
+
+$buildVarsPath = Join-Path $telegram 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
+$buildVars = Get-Content $buildVarsPath -Raw
+$apiVarsMarker = @'
+    public static int APP_ID = 4;
+    public static String APP_HASH = "014b35b6184100b085b0d0572f9b5103";
+'@.TrimEnd()
+$apiVarsBlock = @'
+    public static int APP_ID = BuildConfig.TELEGRAM_API_ID;
+    public static String APP_HASH = BuildConfig.TELEGRAM_API_HASH;
+'@.TrimEnd()
+if ($buildVars -notmatch [regex]::Escape('BuildConfig.TELEGRAM_API_ID')) {
+    $count = ([regex]::Matches($buildVars, [regex]::Escape($apiVarsMarker))).Count
+    if ($count -ne 1) { throw "Telegram BuildVars API anchor count is $count; expected 1." }
+    $buildVars = $buildVars.Replace($apiVarsMarker, $apiVarsBlock)
+    Set-Content -Path $buildVarsPath -Value $buildVars -NoNewline
+}
+
 $loaderPath = Join-Path $telegram 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/ApplicationLoaderImpl.java'
 $loader = Get-Content $loaderPath -Raw
 $classMarker = 'public class ApplicationLoaderImpl extends ApplicationLoader {'
@@ -79,6 +132,8 @@ $changed = @(
         Where-Object { $_ -and -not $_.StartsWith('.tgwsproxy/') }
 )
 $expected = @(
+    'TMessagesProj/build.gradle',
+    'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java',
     'TMessagesProj_AppStandalone/build.gradle',
     'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/ApplicationLoaderImpl.java',
     'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java'
