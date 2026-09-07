@@ -33,6 +33,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 
 $destinationPath = [System.IO.Path]::GetFullPath((Join-Path $root $Destination))
 $gitDir = Join-Path $destinationPath '.git'
+$existingRepo = Test-Path $gitDir
 
 if (-not (Test-Path $destinationPath)) {
     New-Item -ItemType Directory -Path $destinationPath -Force | Out-Null
@@ -60,7 +61,7 @@ if (-not (Test-Path $destinationPath)) {
     }
 }
 
-if ($Force) {
+if ($Force -and $existingRepo) {
     & git -C $destinationPath reset --hard
     if ($LASTEXITCODE -ne 0) { throw 'git reset --hard failed.' }
     & git -C $destinationPath clean -fd
