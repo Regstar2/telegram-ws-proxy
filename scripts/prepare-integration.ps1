@@ -7,11 +7,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
-$forceArg = @()
-if ($Force) { $forceArg = @('-Force') }
+if ($Force) {
+    & (Join-Path $PSScriptRoot 'fetch-upstream.ps1') -Force
+    & (Join-Path $PSScriptRoot 'fetch-core.ps1') -Force
+} else {
+    & (Join-Path $PSScriptRoot 'fetch-upstream.ps1')
+    & (Join-Path $PSScriptRoot 'fetch-core.ps1')
+}
 
-& (Join-Path $PSScriptRoot 'fetch-upstream.ps1') @forceArg
-& (Join-Path $PSScriptRoot 'fetch-core.ps1') @forceArg
 & (Join-Path $PSScriptRoot 'build-core.ps1')
 & (Join-Path $PSScriptRoot 'apply-integration.ps1')
 
