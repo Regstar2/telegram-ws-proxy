@@ -133,28 +133,7 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
 
     $preparedCoreBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj/build.gradle') -Raw
-    if ($preparedCoreBuild -notmatch '(?m)^        prototype \{        & git -C $telegramWorktree status --porcelain |
-            ForEach-Object { if ($_.Length -ge 4) { $_.Substring(3).Trim('"') } } |
-            Where-Object { $_ -and -not $_.StartsWith('.tgwsproxy/') }
-    )
-    if ($changes.Count -gt 5) {
-        throw "Prepared integration exceeds the 5-file source diff budget: $($changes.Count)"
-    }
-}
-
-$coreWorktree = Join-Path $root '.work/tgwsproxy-core'
-if (Test-Path (Join-Path $coreWorktree '.git')) {
-    $actualCore = (& git -C $coreWorktree rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to read core worktree HEAD.' }
-    if ($actualCore -ne $coreCommit) {
-        throw "Local core checkout is not pinned: $actualCore != $coreCommit"
-    }
-}
-
-Write-Host 'Repository checks passed.'
-Write-Host "Pinned Telegram commit: $telegramCommit"
-Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
-) {
+    if ($preparedCoreBuild -notmatch '(?m)^        prototype \{') {
         throw 'Prepared Telegram core is missing the fast prototype build type.'
     }
     if ($preparedCoreBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false[\s\S]*?DEBUG_VERSION", "false"[\s\S]*?DEBUG_PRIVATE_VERSION", "false"') {
@@ -165,28 +144,7 @@ Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
     }
 
     $preparedAppBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/build.gradle') -Raw
-    if ($preparedAppBuild -notmatch '(?m)^        prototype \{        & git -C $telegramWorktree status --porcelain |
-            ForEach-Object { if ($_.Length -ge 4) { $_.Substring(3).Trim('"') } } |
-            Where-Object { $_ -and -not $_.StartsWith('.tgwsproxy/') }
-    )
-    if ($changes.Count -gt 5) {
-        throw "Prepared integration exceeds the 5-file source diff budget: $($changes.Count)"
-    }
-}
-
-$coreWorktree = Join-Path $root '.work/tgwsproxy-core'
-if (Test-Path (Join-Path $coreWorktree '.git')) {
-    $actualCore = (& git -C $coreWorktree rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to read core worktree HEAD.' }
-    if ($actualCore -ne $coreCommit) {
-        throw "Local core checkout is not pinned: $actualCore != $coreCommit"
-    }
-}
-
-Write-Host 'Repository checks passed.'
-Write-Host "Pinned Telegram commit: $telegramCommit"
-Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
-) {
+    if ($preparedAppBuild -notmatch '(?m)^        prototype \{') {
         throw 'Prepared Telegram app is missing the fast prototype build type.'
     }
     if ($preparedAppBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false') {
