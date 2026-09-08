@@ -82,60 +82,68 @@ integration/branding/res/mipmap-anydpi-v26/tgwsproxy_launcher.xml
 
 ## Xiaomi / HyperOS dark-mode compatibility
 
-Цель compatibility layer — **сохранить штатную тёмную тему Telegram**, а не запрещать dark mode.
+Цель fix — сохранить штатную тёмную тему Telegram и не добавлять Xiaomi-specific Java-патчи в upstream.
 
-Pinned Telegram уже реализует системный режим самостоятельно:
+Исследование pinned Telegram 12.10.1 показало важный переход:
 
-- на Android 10+ `selectedAutoNightType` по умолчанию равен `AUTO_NIGHT_TYPE_SYSTEM`;
-- `Theme.needSwitchToTheme()` читает `Configuration.UI_MODE_NIGHT_MASK`;
-- при `UI_MODE_NIGHT_YES` Telegram применяет собственный `currentNightTheme`.
+1. приложение стартует с `Theme.TMessages.Start`;
+2. для night-конфигурации upstream уже переопределяет этот startup theme как `Theme.AppCompat.DayNight`;
+3. затем `LaunchActivity.onCreate()` выполняет:
 
-Также upstream themes уже содержат:
+~~~java
+setTheme(R.style.Theme_TMessages);
+~~~
 
-```xml
-<item name="android:forceDarkAllowed">false</item>
-```
+4. `Theme.TMessages` в upstream `values-v21` и `values-v31` наследуется от `Theme.AppCompat.Light`, а отдельного night-варианта этого style нет.
 
-в релевантных `values-v21`, `values-v31` и `values-night`. Поэтому Telegram styles, `LaunchActivity` и theme-selection logic **не патчатся**.
+При этом Telegram позже сам применяет собственный `currentNightTheme` по `AUTO_NIGHT_TYPE_SYSTEM`. В результате Android/Xiaomi видит Activity на Light-theme, хотя Telegram уже рисует тёмную палитру самостоятельно. Для fork package это может запускать MIUI global inversion и повреждать уже готовый dark UI.
 
-Проблема Xiaomi возникает, когда MIUI/HyperOS поверх уже отрисованной Telegram light/dark theme применяет дополнительную algorithmic Force Dark inversion к fork package. Это даёт двойное преобразование цветов/контролов и ломает интерфейс.
+Предыдущие два workaround были проверены на реальном Xiaomi и не решили проблему:
 
-Compatibility layer делает две вещи, не меняя системный `uiMode` и не переключая Telegram в светлый режим:
+- manifest `force_dark_google=true`;
+- runtime `DecorView.setForceDarkAllowed(false)`.
 
-1. сохраняет Xiaomi manifest hint:
+Они удалены из текущего варианта PR #20 как недоказанные и лишние.
 
-```xml
-<meta-data android:name="force_dark_google" android:value="true" />
-```
+Новый fix работает только на resource layer. Во время применения overlay скрипт берёт upstream `Theme.TMessages` из:
 
-2. на Android 10+ регистрирует lifecycle callback и для каждого Activity вызывает:
+~~~text
+TMessagesProj/src/main/res/values-v21/styles.xml
+TMessagesProj/src/main/res/values-v31/styles.xml
+~~~
 
-```java
-activity.getWindow().getDecorView().setForceDarkAllowed(false);
-```
+и генерирует эквивалентные night-qualified styles, меняя **только parent**:
 
-Это запрещает **только алгоритмическую вторичную инверсию**. Нативная тёмная тема Telegram продолжает включаться через `AUTO_NIGHT_TYPE_SYSTEM`.
+~~~xml
+parent="Theme.AppCompat.Light"
+~~~
 
-Compat source хранится в integration layer:
+на:
 
-```text
-integration/telegram/TelegramWspDarkModeCompat.java
-```
+~~~xml
+parent="Theme.AppCompat.DayNight"
+~~~
 
-и копируется в generated `.tgwsproxy/compat/java`, подключённый через уже изменяемый `TMessagesProj_AppStandalone/build.gradle`. Новый upstream-файл Telegram не появляется: общий source diff остаётся **5 файлов**, `tgnet` не затрагивается.
+Generated resources:
 
-Для device diagnostics в лог выводятся только безопасные состояния:
+~~~text
+.tgwsproxy/branding/res/values-night-v21/tgwsproxy_theme.xml
+.tgwsproxy/branding/res/values-night-v31/tgwsproxy_theme.xml
+~~~
 
-```text
-systemNight=<true|false>
-autoNightType=<n>
-telegramThemeDark=<true|false>
-forceDarkAllowed=<true|false>
-```
+Все остальные items копируются из pinned upstream автоматически. Поэтому при будущем обновлении Telegram мы не держим собственную копию style вручную: overlay всегда строится из актуального pinned source и CI проверяет ожидаемые anchors.
 
-Это позволяет отличить две проблемы: Telegram не переключился на native night theme или Xiaomi повторно инвертирует уже тёмный UI.
+Что принципиально не меняется:
 
-Reference: Xiaomi HyperOS dark-mode adaptation documentation: https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1595
+- `Theme.java` не патчится;
+- `LaunchActivity.java` не патчится;
+- Telegram продолжает сам выбирать day/night theme;
+- системный `uiMode` не переопределяется;
+- новых upstream-файлов Telegram нет;
+- source diff остаётся **5 файлов**;
+- `tgnet` не затрагивается.
+
+Reference: Xiaomi HyperOS dark-mode documentation рекомендует для приложений с собственной dark-theme реализацией использовать native dark theme / DayNight и избегать повторной global inversion: https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1595
 
 ## Telegram API credentials
 
