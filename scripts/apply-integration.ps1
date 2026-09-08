@@ -36,14 +36,24 @@ $brandingResGenerated = Join-Path $brandingGenerated 'res'
 $brandingManifestSource = Join-Path $telegram 'TMessagesProj/config/release/AndroidManifest_standalone.xml'
 $brandingManifestGenerated = Join-Path $brandingGenerated 'AndroidManifest_standalone.xml'
 
-$compatSource = Join-Path $root 'integration/telegram/TelegramWspDarkModeCompat.java'
-$compatGeneratedRoot = Join-Path $generatedDir 'compat/java'
-$compatGeneratedPackage = Join-Path $compatGeneratedRoot 'org/telegram/messenger'
-$compatGeneratedPath = Join-Path $compatGeneratedPackage 'TelegramWspDarkModeCompat.java'
+$nightThemeSources = @(
+    @{
+        source = Join-Path $telegram 'TMessagesProj/src/main/res/values-v21/styles.xml'
+        destination = Join-Path $brandingResGenerated 'values-night-v21/tgwsproxy_theme.xml'
+    },
+    @{
+        source = Join-Path $telegram 'TMessagesProj/src/main/res/values-v31/styles.xml'
+        destination = Join-Path $brandingResGenerated 'values-night-v31/tgwsproxy_theme.xml'
+    }
+)
 
 if (-not (Test-Path $brandingResSource)) { throw "Branding resources not found: $brandingResSource" }
 if (-not (Test-Path $brandingManifestSource)) { throw "Standalone manifest not found: $brandingManifestSource" }
-if (-not (Test-Path $compatSource)) { throw "Telegram-WSP dark-mode compat source not found: $compatSource" }
+foreach ($nightThemeSource in $nightThemeSources) {
+    if (-not (Test-Path $nightThemeSource.source)) {
+        throw "Telegram night-theme source not found: $($nightThemeSource.source)"
+    }
+}
 
 if (Test-Path $brandingGenerated) {
     Remove-Item -Recurse -Force $brandingGenerated
@@ -51,11 +61,37 @@ if (Test-Path $brandingGenerated) {
 New-Item -ItemType Directory -Path $brandingResGenerated -Force | Out-Null
 Copy-Item -Path (Join-Path $brandingResSource '*') -Destination $brandingResGenerated -Recurse -Force
 
-if (Test-Path $compatGeneratedRoot) {
-    Remove-Item -Recurse -Force $compatGeneratedRoot
+foreach ($nightThemeSource in $nightThemeSources) {
+    $sourceText = Get-Content $nightThemeSource.source -Raw
+    $styleMatch = [regex]::Match(
+        $sourceText,
+        '(?s)<style name="Theme\.TMessages" parent="Theme\.AppCompat\.Light">.*?</style>'
+    )
+    if (-not $styleMatch.Success) {
+        throw "Theme.TMessages Light style not found in $($nightThemeSource.source)"
+    }
+
+    $nightStyle = $styleMatch.Value.Replace(
+        'parent="Theme.AppCompat.Light"',
+        'parent="Theme.AppCompat.DayNight"'
+    )
+
+    $nightThemeDir = Split-Path -Parent $nightThemeSource.destination
+    New-Item -ItemType Directory -Path $nightThemeDir -Force | Out-Null
+    $nightThemeXml = '<?xml version="1.0" encoding="utf-8"?>' +
+        [Environment]::NewLine +
+        '<resources>' +
+        [Environment]::NewLine +
+        $nightStyle +
+        [Environment]::NewLine +
+        '</resources>' +
+        [Environment]::NewLine
+    [System.IO.File]::WriteAllText(
+        $nightThemeSource.destination,
+        $nightThemeXml,
+        [System.Text.UTF8Encoding]::new($false)
+    )
 }
-New-Item -ItemType Directory -Path $compatGeneratedPackage -Force | Out-Null
-Copy-Item -Force $compatSource $compatGeneratedPath
 
 $brandingManifest = Get-Content $brandingManifestSource -Raw
 $iconMarker = '        android:icon="@mipmap/ic_launcher_sa"'
@@ -64,11 +100,6 @@ $labelMarker = '        android:label="@string/AppName"'
 $managedIcon = '        android:icon="@mipmap/tgwsproxy_launcher"'
 $managedRoundIcon = '        android:roundIcon="@mipmap/tgwsproxy_launcher"'
 $managedLabel = '        android:label="Telegram-WSP"'
-$applicationTagEndMarker = '        tools:replace="android:supportsRtl">'
-$xiaomiForceDarkMetadata = @'
-        <!-- Xiaomi MIUI/HyperOS: disable vendor global force-dark inversion for this fork package. -->
-        <meta-data android:name="force_dark_google" android:value="true" />
-'@.TrimEnd()
 
 $iconCount = ([regex]::Matches($brandingManifest, [regex]::Escape($iconMarker))).Count
 if ($iconCount -ne 1) { throw "Standalone launcher icon anchor count is $iconCount; expected 1." }
@@ -76,14 +107,10 @@ $roundIconCount = ([regex]::Matches($brandingManifest, [regex]::Escape($roundIco
 if ($roundIconCount -ne 1) { throw "Standalone round launcher icon anchor count is $roundIconCount; expected 1." }
 $labelCount = ([regex]::Matches($brandingManifest, [regex]::Escape($labelMarker))).Count
 if ($labelCount -ne 1) { throw "Standalone application label anchor count is $labelCount; expected 1." }
-$applicationTagEndCount = ([regex]::Matches($brandingManifest, [regex]::Escape($applicationTagEndMarker))).Count
-if ($applicationTagEndCount -ne 1) { throw "Standalone application tag-end anchor count is $applicationTagEndCount; expected 1." }
 
 $brandingManifest = $brandingManifest.Replace($iconMarker, $managedIcon)
 $brandingManifest = $brandingManifest.Replace($roundIconMarker, $managedRoundIcon)
 $brandingManifest = $brandingManifest.Replace($labelMarker, $managedLabel)
-$applicationTagEndBlock = $applicationTagEndMarker + [Environment]::NewLine + [Environment]::NewLine + $xiaomiForceDarkMetadata
-$brandingManifest = $brandingManifest.Replace($applicationTagEndMarker, $applicationTagEndBlock)
 Set-Content -Path $brandingManifestGenerated -Value $brandingManifest -NoNewline
 
 $buildPath = Join-Path $telegram 'TMessagesProj_AppStandalone/build.gradle'
@@ -161,12 +188,10 @@ $appSourceSetBrandingBlock = @'
     sourceSets.standalone {
         manifest.srcFile '../.tgwsproxy/branding/AndroidManifest_standalone.xml'
         res.srcDir '../.tgwsproxy/branding/res'
-        java.srcDir '../.tgwsproxy/compat/java'
     }
     sourceSets.prototype {
         manifest.srcFile '../.tgwsproxy/branding/AndroidManifest_standalone.xml'
         res.srcDir '../.tgwsproxy/branding/res'
-        java.srcDir '../.tgwsproxy/compat/java'
     }
 '@.TrimEnd()
 if ($build -notmatch [regex]::Escape('../.tgwsproxy/branding/AndroidManifest_standalone.xml')) {
@@ -180,16 +205,6 @@ if ($build -notmatch [regex]::Escape('../.tgwsproxy/branding/AndroidManifest_sta
         $build = $build.Replace($appSourceSetMarker, $appSourceSetBrandingBlock)
     }
 }
-if ($build -notmatch [regex]::Escape("../.tgwsproxy/compat/java")) {
-    $brandingResAnchor = "        res.srcDir '../.tgwsproxy/branding/res'"
-    $brandingResCount = ([regex]::Matches($build, [regex]::Escape($brandingResAnchor))).Count
-    if ($brandingResCount -ne 2) { throw "Telegram app branding source-set anchor count is $brandingResCount; expected 2." }
-    $build = $build.Replace(
-        $brandingResAnchor,
-        $brandingResAnchor + [Environment]::NewLine + "        java.srcDir '../.tgwsproxy/compat/java'"
-    )
-}
-
 $appAbiMarker = '                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"'
 $appAbiBlock = @'
                 if (project.findProperty("TGWS_PROXY_ARM64_ONLY")?.toBoolean()) {
@@ -349,7 +364,6 @@ public class ApplicationLoaderImpl extends ApplicationLoader {
     @Override
     public void onCreate() {
         super.onCreate();
-        TelegramWspDarkModeCompat.install(this);
         TgWsProxyBootstrap.start(this);
     }
 "@.TrimEnd()
@@ -357,27 +371,21 @@ if ($loader -notmatch [regex]::Escape('TgWsProxyBootstrap.start(this);')) {
     $count = ([regex]::Matches($loader, [regex]::Escape($classMarker))).Count
     if ($count -ne 1) { throw "ApplicationLoaderImpl anchor count is $count; expected 1." }
     $loader = $loader.Replace($classMarker, $classBlock)
-} elseif ($loader -notmatch [regex]::Escape('TelegramWspDarkModeCompat.install(this);')) {
-    $proxyStartMarker = '        TgWsProxyBootstrap.start(this);'
-    $count = ([regex]::Matches($loader, [regex]::Escape($proxyStartMarker))).Count
-    if ($count -ne 1) { throw "ApplicationLoaderImpl proxy start anchor count is $count; expected 1." }
-    $loader = $loader.Replace(
-        $proxyStartMarker,
-        '        TelegramWspDarkModeCompat.install(this);' + [Environment]::NewLine + $proxyStartMarker
-    )
+    Set-Content -Path $loaderPath -Value $loader -NoNewline
 }
-Set-Content -Path $loaderPath -Value $loader -NoNewline
 
 $overlay = Join-Path $root 'integration/telegram/TgWsProxyBootstrap.java'
 $bootstrapPath = Join-Path $telegram 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java'
 Copy-Item -Force $overlay $bootstrapPath
 
-if (-not (Test-Path $compatGeneratedPath)) {
-    throw "Generated Telegram-WSP dark-mode compat source is missing: $compatGeneratedPath"
-}
-$compatGeneratedText = Get-Content $compatGeneratedPath -Raw
-if ($compatGeneratedText -notmatch 'setForceDarkAllowed\(false\)') {
-    throw 'Generated Telegram-WSP dark-mode compat source does not block Xiaomi duplicate Force Dark inversion.'
+foreach ($nightThemeSource in $nightThemeSources) {
+    if (-not (Test-Path $nightThemeSource.destination)) {
+        throw "Generated Telegram-WSP night theme is missing: $($nightThemeSource.destination)"
+    }
+    $nightThemeText = Get-Content $nightThemeSource.destination -Raw
+    if ($nightThemeText -notmatch '<style name="Theme\.TMessages" parent="Theme\.AppCompat\.DayNight">') {
+        throw "Generated Telegram-WSP night theme is not DayNight: $($nightThemeSource.destination)"
+    }
 }
 
 $generatedIcon = Join-Path $brandingResGenerated 'drawable-nodpi/tgwsproxy_launcher_source.png'
@@ -395,9 +403,6 @@ if ($generatedManifestText -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launc
 }
 if ($generatedManifestText -notmatch 'android:label="Telegram-WSP"') {
     throw 'Generated standalone manifest does not use the Telegram-WSP application label.'
-}
-if ($generatedManifestText -notmatch '<meta-data android:name="force_dark_google" android:value="true" />') {
-    throw 'Generated standalone manifest does not disable Xiaomi MIUI/HyperOS vendor force dark.'
 }
 
 & git -C $telegram diff --check
