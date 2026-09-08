@@ -194,8 +194,11 @@ else {
     throw "Release signing configuration is ambiguous. Upstream blocks: $($releaseSigningMatches.Count); managed env markers: keystore=$managedKeystoreCount password=$managedPasswordCount alias=$managedAliasCount."
 }
 
-$securePassword = Read-Host 'Release keystore password' -AsSecureString
-$password = Convert-SecureStringToPlainText $securePassword
+$password = $env:TELEGRAM_WSP_KEYSTORE_PASSWORD
+if ([string]::IsNullOrEmpty($password)) {
+    $securePassword = Read-Host 'Release keystore password' -AsSecureString
+    $password = Convert-SecureStringToPlainText $securePassword
+}
 if ([string]::IsNullOrEmpty($password)) {
     throw 'Release keystore password cannot be empty.'
 }
