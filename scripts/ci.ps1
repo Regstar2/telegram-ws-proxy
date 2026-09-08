@@ -32,8 +32,12 @@ $required = @(
     'scripts/build-apk.ps1',
     'scripts/build-release.ps1',
     'scripts/create-release-keystore.ps1',
+    'scripts/sync-upstream.ps1',
+    'scripts/package-release-source.ps1',
     'scripts/diagnose-xiaomi-dark-mode.ps1',
-    'scripts/ensure-telegram-theme-assets-lf.ps1'
+    'scripts/ensure-telegram-theme-assets-lf.ps1',
+    '.github/workflows/release.yml',
+    '.github/workflows/upstream-sync.yml'
 )
 
 foreach ($path in $required) {
@@ -143,6 +147,37 @@ if ($buildApkScript -notmatch 'themeBytes -contains \[byte\]13') {
     throw 'scripts/build-apk.ps1 must reject packaged Telegram theme assets containing CR bytes.'
 }
 
+$buildCoreScript = Get-Content (Join-Path $root 'scripts/build-core.ps1') -Raw
+if ($buildCoreScript -notmatch 'TGWSP_CORE_GRADLE') {
+    throw 'Core build script must support a dedicated Gradle 8.2.1 executable for release CI.'
+}
+
+$syncUpstreamScript = Get-Content (Join-Path $root 'scripts/sync-upstream.ps1') -Raw
+if ($syncUpstreamScript -notmatch 'git ls-remote' -or $syncUpstreamScript -notmatch 'APP_VERSION_NAME' -or $syncUpstreamScript -notmatch 'APP_VERSION_CODE') {
+    throw 'Upstream sync script must resolve the Telegram master commit and version metadata.'
+}
+if ($syncUpstreamScript -notmatch 'master-ahead-without-version-bump') {
+    throw 'Upstream sync must avoid publishing arbitrary master commits without a Telegram version bump.'
+}
+
+$sourcePackageScript = Get-Content (Join-Path $root 'scripts/package-release-source.ps1') -Raw
+if ($sourcePackageScript -notmatch 'Telegram-upstream-source' -or $sourcePackageScript -notmatch 'tgwsproxy-core-source' -or $sourcePackageScript -notmatch 'SOURCE_MANIFEST.json') {
+    throw 'Release source packaging must include Telegram, tgwsproxy-core, overlay source and a source manifest.'
+}
+
+$releaseWorkflow = Get-Content (Join-Path $root '.github/workflows/release.yml') -Raw
+if ($releaseWorkflow -notmatch 'RELEASE_KEYSTORE_BASE64' -or $releaseWorkflow -notmatch 'build-release\.ps1' -or $releaseWorkflow -notmatch 'gh release create') {
+    throw 'Release workflow must restore the signing key, build the APK and publish a GitHub Release.'
+}
+if ($releaseWorkflow -notmatch 'latest\.json' -or $releaseWorkflow -notmatch 'package-release-source\.ps1') {
+    throw 'Release workflow must publish the update feed and Corresponding Source assets.'
+}
+
+$upstreamWorkflow = Get-Content (Join-Path $root '.github/workflows/upstream-sync.yml') -Raw
+if ($upstreamWorkflow -notmatch 'schedule:' -or $upstreamWorkflow -notmatch 'sync-upstream\.ps1 -Apply' -or $upstreamWorkflow -notmatch 'uses: \./\.github/workflows/release\.yml') {
+    throw 'Upstream workflow must check Telegram on a schedule and call the reusable release workflow.'
+}
+
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
 if ($prepareScript -notmatch 'Reusing pinned Telegram checkout') {
     throw 'prepare-integration.ps1 must preserve the pinned Telegram checkout for incremental builds.'
@@ -207,6 +242,10 @@ if ($releaseBuildScript -notmatch 'SkipPrepare\s*=\s*\$true') {
 }
 if ($releaseBuildScript -notmatch 'TELEGRAM_WSP_KEYSTORE_PASSWORD') {
     throw 'Release build script must inject signing credentials only through the process environment.'
+}
+
+if ($releaseBuildScript -notmatch '\$password\s*=\s*\$env:TELEGRAM_WSP_KEYSTORE_PASSWORD') {
+    throw 'Release build script must support non-interactive signing in GitHub Actions.'
 }
 
 if ($releaseBuildScript -notmatch 'managedKeystoreCount' -or $releaseBuildScript -notmatch 'existing Telegram-WSP keystore configuration reused') {
@@ -388,29 +427,8 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     if ($preparedBootstrap -notmatch '@connection_mode=cf_first') {
         throw 'Prepared Telegram bootstrap must prefer the Cloudflare proxy route.'
     }
-    if ($preparedBootstrap -notmatch 'TelegramWSPTheme') {
-        throw 'Diagnostic branch must emit Telegram runtime theme state.'
-    }
-    if ($preparedBootstrap -notmatch 'Theme\.getActiveTheme\(\)') {
-        throw 'Diagnostic branch must report the active Telegram theme.'
-    }
-    if ($preparedBootstrap -notmatch 'Theme\.isCurrentThemeDark\(\)') {
-        throw 'Diagnostic branch must report whether the active Telegram theme is dark.'
-    }
-    if ($preparedBootstrap -notmatch 'Theme\.isAnimatingColor\(\)') {
-        throw 'Diagnostic branch must report whether Telegram theme animation is active.'
-    }
-    if ($preparedBootstrap -notmatch 'Theme\.getNonAnimatedColor\(') {
-        throw 'Diagnostic branch must report the non-animated Telegram theme color.'
-    }
-    if ($preparedBootstrap -notmatch 'Theme\.getCurrentColor\(') {
-        throw 'Diagnostic branch must report the currentColors value.'
-    }
-    if ($preparedBootstrap -notmatch 'Theme\.hasThemeKey\(') {
-        throw 'Diagnostic branch must report whether currentColors contains the theme key.'
-    }
-    if ($preparedBootstrap -notmatch 'key_windowBackgroundWhiteBlackText') {
-        throw 'Diagnostic branch must report the intro text color key.'
+    if ($preparedBootstrap -match 'TelegramWSPTheme' -or $preparedBootstrap -match 'scheduleThemeDiagnostics') {
+        throw 'Release bootstrap must not contain temporary theme diagnostics.'
     }
 
     $changes = @(
