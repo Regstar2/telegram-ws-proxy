@@ -72,23 +72,20 @@ if ($diagnosticScript -notmatch '\$AdbArguments' -or $diagnosticScript -notmatch
 }
 
 $themeLfScript = Get-Content (Join-Path $root 'scripts/ensure-telegram-theme-assets-lf.ps1') -Raw
-if ($themeLfScript -notmatch '\*\.attheme text eol=lf') {
-    throw 'Theme asset normalization must force LF through Git attributes.'
+if ($themeLfScript -notmatch '\.tgwsproxy/theme-assets') {
+    throw 'Theme normalization must generate an untracked LF asset overlay.'
 }
-if ($themeLfScript -notmatch 'ReadAllBytes') {
-    throw 'Theme asset normalization must verify raw line-ending bytes.'
-}
-if ($themeLfScript -notmatch 'Convert-CrlfToLf') {
-    throw 'Theme asset normalization must convert CRLF bytes directly.'
+if ($themeLfScript -notmatch 'Convert-CrlfBytesToLf') {
+    throw 'Theme normalization must convert CRLF bytes in generated copies.'
 }
 if ($themeLfScript -notmatch 'WriteAllBytes') {
-    throw 'Theme asset normalization must rewrite normalized bytes explicitly.'
+    throw 'Theme normalization must write generated theme bytes explicitly.'
 }
-if ($themeLfScript -match 'checkout HEAD -- \$asset') {
-    throw 'Theme asset normalization must not rely on checkout to rewrite Windows CRLF files.'
+if ($themeLfScript -notmatch 'ignore-space-at-eol') {
+    throw 'Theme normalization must only clean up line-ending-only changes from the previous helper.'
 }
-if ($themeLfScript -notmatch 'status --porcelain') {
-    throw 'Theme asset normalization must verify that normalized assets remain Git-clean.'
+if ($themeLfScript -match '\*\.attheme text eol=lf') {
+    throw 'Theme normalization must not keep the obsolete local Git attribute rule.'
 }
 
 $buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
@@ -173,6 +170,12 @@ if ($applyScript -notmatch '\.tgwsproxy/branding/res') {
 if ($applyScript -notmatch 'android:label="Telegram-WSP"') {
     throw 'Integration script must set the Telegram-WSP application label.'
 }
+if ($applyScript -notmatch '\.tgwsproxy/theme-assets') {
+    throw 'Integration script must attach the generated LF Telegram theme overlay.'
+}
+if ($applyScript -notmatch 'sourceSets\.standalone\.assets\.srcDir' -or $applyScript -notmatch 'sourceSets\.prototype\.assets\.srcDir') {
+    throw 'Integration script must attach LF theme assets to standalone and prototype source sets.'
+}
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
 if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
@@ -255,6 +258,21 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($preparedCoreBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
         throw 'Prepared Telegram core is missing the ARM64-only prototype filter.'
+    }
+    if ($preparedCoreBuild -notmatch '\.tgwsproxy/theme-assets') {
+        throw 'Prepared Telegram core does not use the generated LF theme asset overlay.'
+    }
+
+    $generatedThemeRoot = Join-Path $telegramWorktree '.tgwsproxy/theme-assets'
+    $generatedThemeFiles = @(Get-ChildItem $generatedThemeRoot -File -Filter '*.attheme' -ErrorAction SilentlyContinue)
+    if ($generatedThemeFiles.Count -eq 0) {
+        throw 'Prepared Telegram LF theme overlay is missing.'
+    }
+    foreach ($generatedThemeFile in $generatedThemeFiles) {
+        $generatedThemeBytes = [System.IO.File]::ReadAllBytes($generatedThemeFile.FullName)
+        if ($generatedThemeBytes -contains [byte]13) {
+            throw "Prepared Telegram LF theme overlay contains CR bytes: $($generatedThemeFile.Name)"
+        }
     }
 
     $preparedAppBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/build.gradle') -Raw
