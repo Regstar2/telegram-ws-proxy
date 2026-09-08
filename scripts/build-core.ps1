@@ -12,8 +12,14 @@ $root = Split-Path -Parent $PSScriptRoot
 $coreFull = [System.IO.Path]::GetFullPath((Join-Path $root $CorePath))
 if (-not (Test-Path (Join-Path $coreFull 'settings.gradle.kts'))) { throw "Invalid core checkout: $coreFull" }
 
-$gradle = Get-Command gradle -ErrorAction SilentlyContinue
-if (-not $gradle) { throw 'Gradle was not found in PATH.' }
+$gradleExecutable = $env:TGWSP_CORE_GRADLE
+if ([string]::IsNullOrWhiteSpace($gradleExecutable)) {
+    $gradle = Get-Command gradle -ErrorAction SilentlyContinue
+    if (-not $gradle) { throw 'Gradle was not found in PATH.' }
+    $gradleExecutable = $gradle.Source
+} elseif (-not (Test-Path $gradleExecutable)) {
+    throw "TGWSP_CORE_GRADLE does not exist: $gradleExecutable"
+}
 
 $tasks = @()
 if ($WithTests) {
@@ -27,7 +33,7 @@ if ($Offline) {
 }
 
 Write-Host "Building tgwsproxy-core (tests=$WithTests, offline=$Offline)"
-& $gradle.Source -p $coreFull @gradleArgs
+& $gradleExecutable -p $coreFull @gradleArgs
 if ($LASTEXITCODE -ne 0) { throw "tgwsproxy-core Gradle build failed with exit code $LASTEXITCODE" }
 
 $artifact = Join-Path $coreFull 'core/build/outputs/aar/core-release.aar'

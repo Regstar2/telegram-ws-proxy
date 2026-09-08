@@ -21,6 +21,14 @@ if (-not (Test-Path (Join-Path $telegram '.git'))) {
     throw "Telegram checkout not found: $telegram"
 }
 
+$variant = if ($Full) { 'standalone' } else { 'prototype' }
+$apk = Join-Path $telegram "TMessagesProj_AppStandalone/build/outputs/apk/afat/$variant/app.apk"
+
+# A failed build must never leave a stale APK that can be installed by mistake.
+Remove-Item -Force $apk -ErrorAction SilentlyContinue
+
+& (Join-Path $PSScriptRoot 'ensure-telegram-theme-assets-lf.ps1') -TelegramPath $telegram
+
 if ($env:TELEGRAM_API_ID -notmatch '^\d+$') {
     throw 'TELEGRAM_API_ID must be set in the current process and contain decimal digits only.'
 }
@@ -54,12 +62,10 @@ if ($null -eq $gradle) {
 
 if ($Full) {
     $task = ':TMessagesProj_AppStandalone:assembleAfatStandalone'
-    $variant = 'standalone'
     $mode = 'full standalone'
     $gradleArgs = @($task, '--daemon', '--build-cache', '--parallel')
 } else {
     $task = ':TMessagesProj_AppStandalone:assembleAfatPrototype'
-    $variant = 'prototype'
     $mode = 'fast ARM64 prototype'
     $gradleArgs = @($task, '--daemon', '--build-cache', '--parallel', '-PTGWS_PROXY_ARM64_ONLY=true')
 }
@@ -82,9 +88,41 @@ finally {
     Pop-Location
 }
 
-$apk = Join-Path $telegram "TMessagesProj_AppStandalone/build/outputs/apk/afat/$variant/app.apk"
 if (-not (Test-Path $apk)) {
     throw "Telegram APK was not produced at the expected path: $apk"
+}
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$apkArchive = [System.IO.Compression.ZipFile]::OpenRead($apk)
+try {
+    $themeEntries = @(
+        $apkArchive.Entries |
+            Where-Object { $_.FullName -match '^assets/[^/]+\.attheme$' }
+    )
+    if ($themeEntries.Count -eq 0) {
+        throw 'Built APK contains no top-level Telegram .attheme assets.'
+    }
+
+    foreach ($themeEntry in $themeEntries) {
+        $entryStream = $themeEntry.Open()
+        $memory = New-Object System.IO.MemoryStream
+        try {
+            $entryStream.CopyTo($memory)
+            $themeBytes = $memory.ToArray()
+        }
+        finally {
+            $memory.Dispose()
+            $entryStream.Dispose()
+        }
+
+        if ($themeBytes -contains [byte]13) {
+            throw "Built APK Telegram theme asset still contains CR bytes: $($themeEntry.FullName)"
+        }
+    }
+}
+finally {
+    $apkArchive.Dispose()
 }
 
 $apkItem = Get-Item $apk
@@ -92,3 +130,4 @@ Write-Host 'Telegram APK built successfully.'
 Write-Host "Mode: $mode"
 Write-Host "APK: $($apkItem.FullName)"
 Write-Host "Size: $($apkItem.Length) bytes"
+Write-Host "APK LF theme assets verified: $($themeEntries.Count) file(s)"

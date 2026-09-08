@@ -7,7 +7,6 @@ import android.os.Handler;
 import android.os.Looper;
 
 import org.telegram.tgnet.ConnectionsManager;
-
 import java.security.SecureRandom;
 import java.util.Map;
 

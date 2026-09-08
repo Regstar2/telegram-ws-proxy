@@ -1,0 +1,148 @@
+name: Telegram upstream sync
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: Release the currently pinned Telegram version even if upstream did not change.
+        required: true
+        type: boolean
+        default: false
+      revision:
+        description: Telegram-WSP release revision.
+        required: true
+        type: string
+        default: '1'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: telegram-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Check and validate Telegram upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      release_required: ${{ steps.decision.outputs.release_required }}
+      release_ref: ${{ steps.decision.outputs.release_ref }}
+      revision: ${{ steps.decision.outputs.revision }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Inspect Telegram upstream
+        id: upstream
+        shell: pwsh
+        run: |
+          $json = ./scripts/sync-upstream.ps1 -Apply | Select-Object -Last 1
+          $result = $json | ConvertFrom-Json
+          "changed=$($result.applied.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "version=$($result.latestVersion)" >> $env:GITHUB_OUTPUT
+          "build=$($result.latestBuild)" >> $env:GITHUB_OUTPUT
+          "reason=$($result.reason)" >> $env:GITHUB_OUTPUT
+          Write-Host "Upstream result: $json"
+
+      - name: Set up Java
+        if: steps.upstream.outputs.changed == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Go
+        if: steps.upstream.outputs.changed == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: false
+
+      - name: Set up Android SDK
+        if: steps.upstream.outputs.changed == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Install validation SDK components
+        if: steps.upstream.outputs.changed == 'true'
+        shell: bash
+        run: sdkmanager "platforms;android-36" "ndk;27.2.12479018"
+
+      - name: Set up Gradle 8.2.1
+        if: steps.upstream.outputs.changed == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2.1'
+
+      - name: Reproduce integration against new Telegram
+        if: steps.upstream.outputs.changed == 'true'
+        shell: pwsh
+        run: ./scripts/prepare-integration.ps1 -Force
+
+      - name: Run integration gates
+        if: steps.upstream.outputs.changed == 'true'
+        shell: pwsh
+        run: ./scripts/ci.ps1
+
+      - name: Commit validated upstream pin
+        if: steps.upstream.outputs.changed == 'true'
+        id: commit
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/upstream.json
+          git commit -m "chore: sync Telegram ${{ steps.upstream.outputs.version }} (${{ steps.upstream.outputs.build }})"
+          if ($LASTEXITCODE -ne 0) { throw 'git commit failed.' }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw 'git push to main failed.' }
+          $sha = (git rev-parse HEAD).Trim()
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - name: Decide whether a release is required
+        id: decision
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_RELEASE: ${{ inputs.force_release }}
+          REQUESTED_REVISION: ${{ inputs.revision }}
+        run: |
+          $config = Get-Content 'config/upstream.json' -Raw | ConvertFrom-Json
+          $revision = if ([string]::IsNullOrWhiteSpace($env:REQUESTED_REVISION)) { '1' } else { $env:REQUESTED_REVISION }
+          if ($revision -notmatch '^\d+$') { throw 'revision must contain decimal digits only.' }
+
+          $changed = '${{ steps.upstream.outputs.changed }}' -eq 'true'
+          $releaseRef = if ($changed) { '${{ steps.commit.outputs.sha }}' } else { (git rev-parse HEAD).Trim() }
+          $tag = "v$($config.telegramVersion)-wsp.$revision"
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          $releaseExists = $LASTEXITCODE -eq 0
+          $forced = $env:FORCE_RELEASE -eq 'true'
+          $required = $changed -or $forced -or -not $releaseExists
+
+          "release_required=$($required.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "release_ref=$releaseRef" >> $env:GITHUB_OUTPUT
+          "revision=$revision" >> $env:GITHUB_OUTPUT
+
+          Write-Host "Tag: $tag"
+          Write-Host "Release exists: $releaseExists"
+          Write-Host "Release required: $required"
+          Write-Host "Release ref: $releaseRef"
+
+  release:
+    name: Publish validated Telegram-WSP update
+    needs: sync
+    if: needs.sync.outputs.release_required == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ needs.sync.outputs.release_ref }}
+      revision: ${{ needs.sync.outputs.revision }}
+      prerelease: false
+    secrets: inherit

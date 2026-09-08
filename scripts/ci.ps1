@@ -29,13 +29,72 @@ $required = @(
     'scripts/build-core.ps1',
     'scripts/apply-integration.ps1',
     'scripts/prepare-integration.ps1',
-    'scripts/build-apk.ps1'
+    'scripts/build-apk.ps1',
+    'scripts/build-release.ps1',
+    'scripts/create-release-keystore.ps1',
+    'scripts/sync-upstream.ps1',
+    'scripts/package-release-source.ps1',
+    'scripts/diagnose-xiaomi-dark-mode.ps1',
+    'scripts/ensure-telegram-theme-assets-lf.ps1',
+    '.github/workflows/release.yml',
+    '.github/workflows/upstream-sync.yml'
 )
 
 foreach ($path in $required) {
     if (-not (Test-Path (Join-Path $root $path))) {
         throw "Required project file is missing: $path"
     }
+}
+
+$powerShellScripts = @(Get-ChildItem (Join-Path $root 'scripts') -File -Filter '*.ps1')
+foreach ($scriptFile in $powerShellScripts) {
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $scriptFile.FullName,
+        [ref]$tokens,
+        [ref]$parseErrors
+    ) | Out-Null
+
+    if ($parseErrors.Count -gt 0) {
+        $details = @(
+            $parseErrors | ForEach-Object {
+                "{0}:{1} {2}" -f $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber, $_.Message
+            }
+        )
+        throw "PowerShell syntax error in $($scriptFile.Name): $($details -join '; ')"
+    }
+}
+
+$diagnosticScript = Get-Content (Join-Path $root 'scripts/diagnose-xiaomi-dark-mode.ps1') -Raw
+if ($diagnosticScript -match '\[string\[\]\]\$Args') {
+    throw 'diagnose-xiaomi-dark-mode.ps1 must not shadow the PowerShell automatic $Args variable.'
+}
+if ($diagnosticScript -match '@Args') {
+    throw 'diagnose-xiaomi-dark-mode.ps1 must not splat the PowerShell automatic @Args variable.'
+}
+if ($diagnosticScript -notmatch '\$AdbArguments' -or $diagnosticScript -notmatch '@AdbArguments') {
+    throw 'diagnose-xiaomi-dark-mode.ps1 must use an explicit ADB argument array for native invocation.'
+}
+
+$themeLfScript = Get-Content (Join-Path $root 'scripts/ensure-telegram-theme-assets-lf.ps1') -Raw
+if ($themeLfScript -notmatch '\.tgwsproxy/theme-assets') {
+    throw 'Theme normalization must generate an untracked LF asset overlay.'
+}
+if ($themeLfScript -notmatch 'Convert-CrlfBytesToLf') {
+    throw 'Theme normalization must convert CRLF bytes in generated copies.'
+}
+if ($themeLfScript -notmatch 'WriteAllBytes') {
+    throw 'Theme normalization must write generated theme bytes explicitly.'
+}
+if ($themeLfScript -notmatch 'ignore-space-at-eol') {
+    throw 'Theme normalization must only clean up line-ending-only changes from the previous helper.'
+}
+if ($themeLfScript -match '\$attributeRule\s*=') {
+    throw 'Theme normalization must not add a local Git attribute rule for upstream assets.'
+}
+if ($themeLfScript -notmatch "Trim\(\) -ne '\*\.attheme text eol=lf'") {
+    throw 'Theme normalization must remove the obsolete local Git attribute rule left by earlier diagnostics.'
 }
 
 $buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
@@ -71,6 +130,52 @@ if ($buildApkScript -notmatch '--parallel') {
 }
 if ($buildApkScript -notmatch '\[switch\]\$Offline') {
     throw 'scripts/build-apk.ps1 must expose offline repeat builds.'
+}
+if ($buildApkScript -notmatch 'ensure-telegram-theme-assets-lf\.ps1') {
+    throw 'scripts/build-apk.ps1 must enforce LF Telegram theme assets before Gradle.'
+}
+if ($buildApkScript -notmatch 'Remove-Item -Force \$apk') {
+    throw 'scripts/build-apk.ps1 must remove stale APK output before invoking Gradle.'
+}
+if ($buildApkScript -notmatch 'System\.IO\.Compression\.ZipFile') {
+    throw 'scripts/build-apk.ps1 must inspect the packaged APK theme assets.'
+}
+if ($buildApkScript -notmatch "assets/\[\^/\]\+\\\.attheme") {
+    throw 'scripts/build-apk.ps1 must validate packaged Telegram .attheme entries.'
+}
+if ($buildApkScript -notmatch 'themeBytes -contains \[byte\]13') {
+    throw 'scripts/build-apk.ps1 must reject packaged Telegram theme assets containing CR bytes.'
+}
+
+$buildCoreScript = Get-Content (Join-Path $root 'scripts/build-core.ps1') -Raw
+if ($buildCoreScript -notmatch 'TGWSP_CORE_GRADLE') {
+    throw 'Core build script must support a dedicated Gradle 8.2.1 executable for release CI.'
+}
+
+$syncUpstreamScript = Get-Content (Join-Path $root 'scripts/sync-upstream.ps1') -Raw
+if ($syncUpstreamScript -notmatch 'git ls-remote' -or $syncUpstreamScript -notmatch 'APP_VERSION_NAME' -or $syncUpstreamScript -notmatch 'APP_VERSION_CODE') {
+    throw 'Upstream sync script must resolve the Telegram master commit and version metadata.'
+}
+if ($syncUpstreamScript -notmatch 'master-ahead-without-version-bump') {
+    throw 'Upstream sync must avoid publishing arbitrary master commits without a Telegram version bump.'
+}
+
+$sourcePackageScript = Get-Content (Join-Path $root 'scripts/package-release-source.ps1') -Raw
+if ($sourcePackageScript -notmatch 'Telegram-upstream-source' -or $sourcePackageScript -notmatch 'tgwsproxy-core-source' -or $sourcePackageScript -notmatch 'SOURCE_MANIFEST.json') {
+    throw 'Release source packaging must include Telegram, tgwsproxy-core, overlay source and a source manifest.'
+}
+
+$releaseWorkflow = Get-Content (Join-Path $root '.github/workflows/release.yml') -Raw
+if ($releaseWorkflow -notmatch 'RELEASE_KEYSTORE_BASE64' -or $releaseWorkflow -notmatch 'build-release\.ps1' -or $releaseWorkflow -notmatch 'gh release create') {
+    throw 'Release workflow must restore the signing key, build the APK and publish a GitHub Release.'
+}
+if ($releaseWorkflow -notmatch 'latest\.json' -or $releaseWorkflow -notmatch 'package-release-source\.ps1') {
+    throw 'Release workflow must publish the update feed and Corresponding Source assets.'
+}
+
+$upstreamWorkflow = Get-Content (Join-Path $root '.github/workflows/upstream-sync.yml') -Raw
+if ($upstreamWorkflow -notmatch 'schedule:' -or $upstreamWorkflow -notmatch 'sync-upstream\.ps1 -Apply' -or $upstreamWorkflow -notmatch 'uses: \./\.github/workflows/release\.yml') {
+    throw 'Upstream workflow must check Telegram on a schedule and call the reusable release workflow.'
 }
 
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
@@ -114,6 +219,63 @@ if ($applyScript -notmatch '\.tgwsproxy/branding/res') {
 if ($applyScript -notmatch 'android:label="Telegram-WSP"') {
     throw 'Integration script must set the Telegram-WSP application label.'
 }
+if ($applyScript -notmatch '\.tgwsproxy/theme-assets') {
+    throw 'Integration script must attach the generated LF Telegram theme overlay.'
+}
+if ($applyScript -notmatch 'sourceSets\.standalone\.assets\.srcDir' -or $applyScript -notmatch 'sourceSets\.prototype\.assets\.srcDir') {
+    throw 'Integration script must attach LF theme assets to standalone and prototype source sets.'
+}
+
+if ($applyScript -notmatch 'appAfatStandaloneBrandingBlock') {
+    throw 'Integration script must override the afat product-flavor standalone manifest with Telegram-WSP branding.'
+}
+
+$releaseBuildScript = Get-Content (Join-Path $root 'scripts/build-release.ps1') -Raw
+if ($releaseBuildScript -notmatch 'build-apk\.ps1' -or $releaseBuildScript -notmatch 'Full\s*=\s*\$true') {
+    throw 'Release build script must delegate to the full afatStandalone build.'
+}
+if ($releaseBuildScript -match '\$buildArgs\s*=\s*@\(''-Full''') {
+    throw 'Release build script must not pass named PowerShell switches through positional array splatting.'
+}
+if ($releaseBuildScript -notmatch 'SkipPrepare\s*=\s*\$true') {
+    throw 'Release build script must call build-apk.ps1 with named SkipPrepare=true.'
+}
+if ($releaseBuildScript -notmatch 'TELEGRAM_WSP_KEYSTORE_PASSWORD') {
+    throw 'Release build script must inject signing credentials only through the process environment.'
+}
+
+if ($releaseBuildScript -notmatch '\$password\s*=\s*\$env:TELEGRAM_WSP_KEYSTORE_PASSWORD') {
+    throw 'Release build script must support non-interactive signing in GitHub Actions.'
+}
+
+if ($releaseBuildScript -notmatch 'managedKeystoreCount' -or $releaseBuildScript -notmatch 'existing Telegram-WSP keystore configuration reused') {
+    throw 'Release build script must accept an already managed Telegram-WSP signing block in an incremental worktree.'
+}
+if ($releaseBuildScript -notmatch 'apksigner\.bat' -or $releaseBuildScript -notmatch 'verify --verbose --print-certs') {
+    throw 'Release build script must verify the produced APK signature.'
+}
+if ($releaseBuildScript -notmatch "application-label:'Telegram-WSP'") {
+    throw 'Release build script must verify Telegram-WSP branding in the final APK.'
+}
+if ($releaseBuildScript -notmatch 'Remove-Item Env:TELEGRAM_WSP_KEYSTORE_PASSWORD') {
+    throw 'Release build script must clear the signing password from the process environment.'
+}
+
+$keystoreScript = Get-Content (Join-Path $root 'scripts/create-release-keystore.ps1') -Raw
+if ($keystoreScript -notmatch 'PKCS12' -or $keystoreScript -notmatch '4096' -or $keystoreScript -notmatch 'SHA256withRSA') {
+    throw 'Release keystore script must create the expected PKCS12 RSA signing key.'
+}
+if ($keystoreScript -notmatch 'minimum 12 characters') {
+    throw 'Release keystore script must enforce the minimum password length.'
+}
+
+$gitIgnoreText = Get-Content (Join-Path $root '.gitignore') -Raw
+if (-not $gitIgnoreText.Contains('/.signing/')) {
+    throw 'Release signing directory must be ignored by Git.'
+}
+if (-not $gitIgnoreText.Contains('*.p12')) {
+    throw 'PKCS12 release keys must be ignored by Git.'
+}
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
 if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
@@ -148,7 +310,7 @@ if ($coreCommit -notmatch '^[0-9a-f]{40}$') {
 
 if (Get-Command git -ErrorAction SilentlyContinue) {
     $forbiddenTracked = @(
-        (& git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**') |
+        (& git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**' '.signing/**' '*.p12') |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     )
     if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
@@ -196,6 +358,21 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($preparedCoreBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
         throw 'Prepared Telegram core is missing the ARM64-only prototype filter.'
+    }
+    if ($preparedCoreBuild -notmatch '\.tgwsproxy/theme-assets') {
+        throw 'Prepared Telegram core does not use the generated LF theme asset overlay.'
+    }
+
+    $generatedThemeRoot = Join-Path $telegramWorktree '.tgwsproxy/theme-assets'
+    $generatedThemeFiles = @(Get-ChildItem $generatedThemeRoot -File -Filter '*.attheme' -ErrorAction SilentlyContinue)
+    if ($generatedThemeFiles.Count -eq 0) {
+        throw 'Prepared Telegram LF theme overlay is missing.'
+    }
+    foreach ($generatedThemeFile in $generatedThemeFiles) {
+        $generatedThemeBytes = [System.IO.File]::ReadAllBytes($generatedThemeFile.FullName)
+        if ($generatedThemeBytes -contains [byte]13) {
+            throw "Prepared Telegram LF theme overlay contains CR bytes: $($generatedThemeFile.Name)"
+        }
     }
 
     $preparedAppBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/build.gradle') -Raw
@@ -249,6 +426,9 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     $preparedBootstrap = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java') -Raw
     if ($preparedBootstrap -notmatch '@connection_mode=cf_first') {
         throw 'Prepared Telegram bootstrap must prefer the Cloudflare proxy route.'
+    }
+    if ($preparedBootstrap -match 'TelegramWSPTheme' -or $preparedBootstrap -match 'scheduleThemeDiagnostics') {
+        throw 'Release bootstrap must not contain temporary theme diagnostics.'
     }
 
     $changes = @(

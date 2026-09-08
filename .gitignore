@@ -15,6 +15,10 @@
 /.work/
 /dist/
 
+# Release signing material (never commit)
+/.signing/
+*.p12
+
 # Android/Gradle local state
 .gradle/
 local.properties
