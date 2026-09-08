@@ -131,6 +131,15 @@ if ($buildApkScript -notmatch 'ensure-telegram-theme-assets-lf\.ps1') {
 if ($buildApkScript -notmatch 'Remove-Item -Force \$apk') {
     throw 'scripts/build-apk.ps1 must remove stale APK output before invoking Gradle.'
 }
+if ($buildApkScript -notmatch 'System\.IO\.Compression\.ZipFile') {
+    throw 'scripts/build-apk.ps1 must inspect the packaged APK theme assets.'
+}
+if ($buildApkScript -notmatch "assets/\[\^/\]\+\\\.attheme") {
+    throw 'scripts/build-apk.ps1 must validate packaged Telegram .attheme entries.'
+}
+if ($buildApkScript -notmatch 'themeBytes -contains \[byte\]13') {
+    throw 'scripts/build-apk.ps1 must reject packaged Telegram theme assets containing CR bytes.'
+}
 
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
 if ($prepareScript -notmatch 'Reusing pinned Telegram checkout') {
