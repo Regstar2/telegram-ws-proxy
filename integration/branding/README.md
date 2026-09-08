@@ -19,4 +19,8 @@ Android packaging uses:
 - a default `mipmap/tgwsproxy_launcher` alias for legacy launchers;
 - an adaptive `mipmap-anydpi-v26/tgwsproxy_launcher.xml` resource for API 26+.
 
-The integration script copies these resources into the generated `.tgwsproxy/branding/res` directory and generates a standalone manifest that points `android:icon` and `android:roundIcon` to `@mipmap/tgwsproxy_launcher`. The pinned Telegram source tree is not modified with extra resource files.
+The integration script copies these resources into the generated `.tgwsproxy/branding/res` directory and generates a standalone manifest that points `android:icon` and `android:roundIcon` to `@mipmap/tgwsproxy_launcher`.
+
+The same generated standalone manifest sets the application label to the literal `Telegram-WSP`. A literal manifest label is used intentionally so locale-specific upstream `AppName` resources cannot change the fork name back to `Telegram` on devices using translated resources. Package/applicationId values are unchanged.
+
+The pinned Telegram source tree is not modified with extra branding resource files.
