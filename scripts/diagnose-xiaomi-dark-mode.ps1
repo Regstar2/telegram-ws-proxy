@@ -103,10 +103,30 @@ Write-Host ('theme=' + $(if ($null -eq $theme -or $theme -eq '') { '<default>' }
 Write-Host ('nighttheme=' + $(if ($null -eq $nightTheme -or $nightTheme -eq '') { '<default Dark Blue>' } else { $nightTheme }))
 
 Write-Host ''
+Write-Host '=== Runtime Telegram theme ==='
+$runtimeLog = & adb logcat -d -v brief "TelegramWSPTheme:I" "*:S" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'runtimeThemeLog=unavailable'
+} else {
+    $runtimeLines = @(
+        $runtimeLog |
+            Where-Object { $_ -match 'TelegramWSPTheme' } |
+            Select-Object -Last 10
+    )
+    if ($runtimeLines.Count -eq 0) {
+        Write-Host 'runtimeThemeLog=<missing>'
+        Write-Host 'Install the latest diagnostic prototype, relaunch it, wait 8 seconds, and run this script again.'
+    } else {
+        $runtimeLines | ForEach-Object { Write-Host $_ }
+    }
+}
+
+Write-Host ''
 Write-Host '=== Interpretation ==='
 Write-Host 'AUTO_NIGHT_TYPE constants: NONE=0, SCHEDULED=1, AUTOMATIC=2, SYSTEM=3.'
 Write-Host 'For the system-dark acceptance case we expect:'
 Write-Host '  Android resourceQualifier=night'
 Write-Host '  selectedAutoNightType=3 (SYSTEM), or the preference absent so Telegram uses SYSTEM by default.'
 Write-Host 'If Android is night but Telegram stores NONE=0, the fork is intentionally staying on its day theme.'
-Write-Host 'Do not paste the full mainconfig.xml; this script prints only theme-related values.'
+Write-Host 'Runtime diagnostics should show activeTheme/currentThemeDark and the actual Telegram background/text colors.'
+Write-Host 'Do not paste the full mainconfig.xml; this script prints only theme-related values and diagnostic log lines.'
