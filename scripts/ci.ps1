@@ -19,6 +19,7 @@ $required = @(
     'docs/product/mvp-scope.md',
     'integration/README.md',
     'integration/telegram/TgWsProxyBootstrap.java',
+    'integration/telegram/TelegramWspDarkModeCompat.java',
     'integration/branding/README.md',
     'integration/branding/res/drawable-nodpi/tgwsproxy_launcher_source.png',
     'integration/branding/res/values/tgwsproxy_launcher.xml',
@@ -115,7 +116,29 @@ if ($applyScript -notmatch 'android:label="Telegram-WSP"') {
     throw 'Integration script must set the Telegram-WSP application label.'
 }
 if ($applyScript -notmatch 'force_dark_google') {
-    throw 'Integration script must disable Xiaomi MIUI/HyperOS vendor force dark.'
+    throw 'Integration script must preserve the Xiaomi static force-dark opt-out.'
+}
+if ($applyScript -notmatch '\.tgwsproxy/compat/java') {
+    throw 'Integration script must attach generated Telegram-WSP compatibility Java sources.'
+}
+if ($applyScript -notmatch 'TelegramWspDarkModeCompat\.install\(this\);') {
+    throw 'ApplicationLoaderImpl overlay must install Telegram-WSP dark-mode compatibility.'
+}
+
+$compatSource = Get-Content (Join-Path $root 'integration/telegram/TelegramWspDarkModeCompat.java') -Raw
+if ($compatSource -notmatch 'setForceDarkAllowed\(false\)') {
+    throw 'Telegram-WSP dark-mode compatibility must suppress duplicate Force Dark inversion.'
+}
+foreach ($forbiddenNightOverride in @('MODE_NIGHT_NO', 'setDefaultNightMode', 'UiModeManager\.setNightMode')) {
+    if ($compatSource -match $forbiddenNightOverride) {
+        throw "Telegram-WSP dark-mode compatibility must not force light/night mode: $forbiddenNightOverride"
+    }
+}
+if ($compatSource -notmatch 'Theme\.selectedAutoNightType') {
+    throw 'Telegram-WSP dark-mode diagnostics must expose Telegram native auto-night state.'
+}
+if ($compatSource -notmatch 'Theme\.isCurrentThemeDark\(\)') {
+    throw 'Telegram-WSP dark-mode diagnostics must expose Telegram native dark-theme state.'
 }
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
@@ -196,6 +219,19 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
         }
     }
 
+    # Preserve Telegram's own system-following dark-mode implementation.
+    $themePath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/ui/ActionBar/Theme.java'
+    $themeText = Get-Content $themePath -Raw
+    if ($themeText -notmatch 'preferences\.getInt\("selectedAutoNightType", Build\.VERSION\.SDK_INT >= 29 \? AUTO_NIGHT_TYPE_SYSTEM : AUTO_NIGHT_TYPE_NONE\)') {
+        throw 'Pinned Telegram no longer defaults Android 10+ auto-night mode to the system theme.'
+    }
+    if ($themeText -notmatch 'selectedAutoNightType == AUTO_NIGHT_TYPE_SYSTEM') {
+        throw 'Pinned Telegram no longer contains system auto-night mode handling.'
+    }
+    if ($themeText -notmatch 'Configuration\.UI_MODE_NIGHT_YES') {
+        throw 'Pinned Telegram no longer switches its native theme from system UI_MODE_NIGHT.'
+    }
+
     $preparedBuildVarsPath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
     $preparedBuildVars = Get-Content $preparedBuildVarsPath -Raw
     if ($preparedBuildVars -notmatch 'public static boolean SUPPORTS_PASSKEYS = false;') {
@@ -235,6 +271,9 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/res') {
         throw 'Prepared Telegram app does not include generated launcher branding resources.'
     }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/compat/java') {
+        throw 'Prepared Telegram app does not include generated Telegram-WSP compatibility sources.'
+    }
 
     $generatedBrandingRoot = Join-Path $telegramWorktree '.tgwsproxy/branding'
     $generatedBrandingManifestPath = Join-Path $generatedBrandingRoot 'AndroidManifest_standalone.xml'
@@ -265,10 +304,29 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
         throw "Prepared standalone manifest must contain exactly one Xiaomi force-dark opt-out metadata entry; found $xiaomiForceDarkCount."
     }
 
+    $generatedCompatPath = Join-Path $telegramWorktree '.tgwsproxy/compat/java/org/telegram/messenger/TelegramWspDarkModeCompat.java'
+    if (-not (Test-Path $generatedCompatPath)) {
+        throw "Generated Telegram-WSP dark-mode compatibility source is missing: $generatedCompatPath"
+    }
+    $generatedCompat = Get-Content $generatedCompatPath -Raw
+    if ($generatedCompat -notmatch 'setForceDarkAllowed\(false\)') {
+        throw 'Generated Telegram-WSP dark-mode compatibility source is incomplete.'
+    }
+    foreach ($forbiddenNightOverride in @('MODE_NIGHT_NO', 'setDefaultNightMode', 'UiModeManager\.setNightMode')) {
+        if ($generatedCompat -match $forbiddenNightOverride) {
+            throw "Generated dark-mode compatibility must not override Telegram/system night selection: $forbiddenNightOverride"
+        }
+    }
+
     $generatedBrandingBlob = (& git hash-object $generatedBrandingIconPath).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Failed to hash generated launcher icon.' }
     if ($generatedBrandingBlob -ne $brandingBlob) {
         throw "Generated launcher icon differs from tracked source: $generatedBrandingBlob != $brandingBlob"
+    }
+
+    $preparedLoader = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/ApplicationLoaderImpl.java') -Raw
+    if ($preparedLoader -notmatch 'TelegramWspDarkModeCompat\.install\(this\);') {
+        throw 'Prepared ApplicationLoaderImpl does not install Telegram-WSP dark-mode compatibility.'
     }
 
     $preparedBootstrap = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java') -Raw
