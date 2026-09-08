@@ -114,15 +114,6 @@ if ($applyScript -notmatch '\.tgwsproxy/branding/res') {
 if ($applyScript -notmatch 'android:label="Telegram-WSP"') {
     throw 'Integration script must set the Telegram-WSP application label.'
 }
-if ($applyScript -notmatch 'values-night-v21/tgwsproxy_theme\.xml') {
-    throw 'Integration script must generate an API 21+ night override for Theme.TMessages.'
-}
-if ($applyScript -notmatch 'values-night-v31/tgwsproxy_theme\.xml') {
-    throw 'Integration script must generate an API 31+ night override for Theme.TMessages.'
-}
-if ($applyScript -notmatch 'Theme\.AppCompat\.DayNight') {
-    throw 'Generated night compatibility must use Theme.AppCompat.DayNight.'
-}
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
 if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
@@ -187,48 +178,6 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
         throw "Prepared integration modified forbidden tgnet paths: $($tgnetChanges -join ', ')"
     }
 
-    # Telegram startup theme already has a native night override, but LaunchActivity
-    # immediately switches to Theme.TMessages. The latter is Light-only upstream.
-    $startNightStylePath = Join-Path $telegramWorktree 'TMessagesProj/src/main/res/values-night/styles.xml'
-    $startNightStyle = Get-Content $startNightStylePath -Raw
-    if ($startNightStyle -notmatch '<style name="Theme\.TMessages\.Start" parent="Theme\.AppCompat\.DayNight">') {
-        throw 'Pinned Telegram no longer provides the expected DayNight startup theme.'
-    }
-
-    $lightThemeSources = @(
-        'TMessagesProj/src/main/res/values-v21/styles.xml',
-        'TMessagesProj/src/main/res/values-v31/styles.xml'
-    )
-    foreach ($styleRelativePath in $lightThemeSources) {
-        $stylePath = Join-Path $telegramWorktree $styleRelativePath
-        $styleText = Get-Content $stylePath -Raw
-        if ($styleText -notmatch '<style name="Theme\.TMessages" parent="Theme\.AppCompat\.Light">') {
-            throw "Pinned Telegram Theme.TMessages is no longer Light in $styleRelativePath; re-evaluate the Xiaomi compatibility overlay."
-        }
-        if ($styleText -notmatch '<item name="android:forceDarkAllowed">false</item>') {
-            throw "Pinned Telegram no longer opts out of standard Force Dark in $styleRelativePath."
-        }
-    }
-
-    $launchActivityPath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java'
-    $launchActivityText = Get-Content $launchActivityPath -Raw
-    if ($launchActivityText -notmatch 'setTheme\(R\.style\.Theme_TMessages\);') {
-        throw 'Pinned Telegram LaunchActivity no longer switches to Theme.TMessages.'
-    }
-
-    # Preserve Telegram's own system-following dark-mode implementation.
-    $themePath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/ui/ActionBar/Theme.java'
-    $themeText = Get-Content $themePath -Raw
-    if ($themeText -notmatch 'preferences\.getInt\("selectedAutoNightType", Build\.VERSION\.SDK_INT >= 29 \? AUTO_NIGHT_TYPE_SYSTEM : AUTO_NIGHT_TYPE_NONE\)') {
-        throw 'Pinned Telegram no longer defaults Android 10+ auto-night mode to the system theme.'
-    }
-    if ($themeText -notmatch 'selectedAutoNightType == AUTO_NIGHT_TYPE_SYSTEM') {
-        throw 'Pinned Telegram no longer contains system auto-night mode handling.'
-    }
-    if ($themeText -notmatch 'Configuration\.UI_MODE_NIGHT_YES') {
-        throw 'Pinned Telegram no longer switches its native theme from system UI_MODE_NIGHT.'
-    }
-
     $preparedBuildVarsPath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
     $preparedBuildVars = Get-Content $preparedBuildVarsPath -Raw
     if ($preparedBuildVars -notmatch 'public static boolean SUPPORTS_PASSKEYS = false;') {
@@ -266,7 +215,7 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
         throw 'Prepared Telegram app does not use the generated branded standalone manifest.'
     }
     if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/res') {
-        throw 'Prepared Telegram app does not include generated launcher and night-theme resources.'
+        throw 'Prepared Telegram app does not include generated launcher branding resources.'
     }
 
     $generatedBrandingRoot = Join-Path $telegramWorktree '.tgwsproxy/branding'
@@ -289,23 +238,6 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($generatedBrandingManifest -notmatch 'android:label="Telegram-WSP"') {
         throw 'Prepared standalone manifest does not use Telegram-WSP as the application label.'
-    }
-
-    $generatedNightThemes = @(
-        (Join-Path $generatedBrandingRoot 'res/values-night-v21/tgwsproxy_theme.xml')
-        (Join-Path $generatedBrandingRoot 'res/values-night-v31/tgwsproxy_theme.xml')
-    )
-    foreach ($nightThemePath in $generatedNightThemes) {
-        if (-not (Test-Path $nightThemePath)) {
-            throw "Generated Telegram-WSP night theme is missing: $nightThemePath"
-        }
-        $nightThemeText = Get-Content $nightThemePath -Raw
-        if ($nightThemeText -notmatch '<style name="Theme\.TMessages" parent="Theme\.AppCompat\.DayNight">') {
-            throw "Generated Telegram-WSP Theme.TMessages is not DayNight: $nightThemePath"
-        }
-        if ($nightThemeText -notmatch '<item name="android:forceDarkAllowed">false</item>') {
-            throw "Generated Telegram-WSP night theme lost upstream forceDarkAllowed=false: $nightThemePath"
-        }
     }
 
     $generatedBrandingBlob = (& git hash-object $generatedBrandingIconPath).Trim()
