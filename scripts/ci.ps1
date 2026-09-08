@@ -78,8 +78,17 @@ if ($themeLfScript -notmatch '\*\.attheme text eol=lf') {
 if ($themeLfScript -notmatch 'ReadAllBytes') {
     throw 'Theme asset normalization must verify raw line-ending bytes.'
 }
-if ($themeLfScript -notmatch 'checkout HEAD -- \$asset') {
-    throw 'Theme asset normalization must restore affected assets from the pinned Git blob.'
+if ($themeLfScript -notmatch 'Convert-CrlfToLf') {
+    throw 'Theme asset normalization must convert CRLF bytes directly.'
+}
+if ($themeLfScript -notmatch 'WriteAllBytes') {
+    throw 'Theme asset normalization must rewrite normalized bytes explicitly.'
+}
+if ($themeLfScript -match 'checkout HEAD -- \$asset') {
+    throw 'Theme asset normalization must not rely on checkout to rewrite Windows CRLF files.'
+}
+if ($themeLfScript -notmatch 'status --porcelain') {
+    throw 'Theme asset normalization must verify that normalized assets remain Git-clean.'
 }
 
 $buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
@@ -118,6 +127,9 @@ if ($buildApkScript -notmatch '\[switch\]\$Offline') {
 }
 if ($buildApkScript -notmatch 'ensure-telegram-theme-assets-lf\.ps1') {
     throw 'scripts/build-apk.ps1 must enforce LF Telegram theme assets before Gradle.'
+}
+if ($buildApkScript -notmatch 'Remove-Item -Force \$apk') {
+    throw 'scripts/build-apk.ps1 must remove stale APK output before invoking Gradle.'
 }
 
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
