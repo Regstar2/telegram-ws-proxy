@@ -3,7 +3,7 @@
 Экспериментальный Android-клиент Telegram с интегрированным WebSocket/Cloudflare transport из [Regstar2/tg-ws-proxy-android](https://github.com/Regstar2/tg-ws-proxy-android).
 
 > [!IMPORTANT]
-> Проект находится на стадии **Prototype**. Сейчас репозиторий содержит инфраструктуру для воспроизводимой интеграции поверх чистого upstream Telegram; готового APK и рабочего встроенного прокси ещё нет.
+> Проект находится на стадии **MVP**. Полный `afatStandalone` APK с интегрированным TgWsProxy, собственным branding и постоянной release-подписью прошёл реальную проверку на Android-устройстве.
 
 ## Цель
 
@@ -88,6 +88,8 @@ scripts/
   build-apk.ps1          fast ARM64 prototype; -Full для afatStandalone
   create-release-keystore.ps1  одноразовое создание собственного release key
   build-release.ps1       signed afatStandalone + metadata/signature verification
+  sync-upstream.ps1       проверка нового Telegram version/build
+  package-release-source.ps1  Corresponding Source assets
   ci.ps1                 проверки репозитория
 ```
 
@@ -99,7 +101,7 @@ scripts/
 
 ```powershell
 git clone https://github.com/Regstar2/telegram-wsp.git
-cd telegram-ws-proxy
+cd telegram-wsp
 
 ./scripts/prepare-integration.ps1 -Force
 ./scripts/ci.ps1
@@ -127,6 +129,20 @@ cd telegram-ws-proxy
 
 Скрипт использует pinned Telegram, проверяет branding `Telegram-WSP`, package `org.telegram.messenger.web` и APK-подпись, затем сохраняет результат в `dist/Telegram-WSP-release.apk`. Файл `.signing/telegram-wsp-release.p12` и его пароль нужно сохранить для всех будущих обновлений и никогда не коммитить.
 
+### GitHub Actions release channel
+
+После настройки repository secrets `RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` workflow `.github/workflows/release.yml` собирает и публикует подписанный APK без локального компьютера.
+
+`.github/workflows/upstream-sync.yml` раз в сутки проверяет `DrKLO/Telegram`. При новом `APP_VERSION_NAME/APP_VERSION_CODE` он обновляет `config/upstream.json`, воспроизводит integration layer, запускает гейты и только после успеха коммитит новый pin и вызывает release workflow. Коммиты master без изменения версии автоматически не публикуются.
+
+Каждый GitHub Release содержит APK, `latest.json`, SHA-256 и архивы точных source-компонентов Telegram/tgwsproxy-core/overlay. Стабильный update feed:
+
+```text
+https://github.com/Regstar2/telegram-wsp/releases/latest/download/latest.json
+```
+
+Этот feed предназначен для встроенного updater. На обычном Android без root/device-owner установка APK всё равно требует подтверждения пользователя; полностью silent install недоступен обычному приложению.
+
 Для локальной сборки с собственными Telegram `api_id` / `api_hash` используйте переменные `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` либо локальный `.work/telegram/local.properties`; значения не должны попадать в Git. Подробности: [integration/README.md](integration/README.md).
 
 ## Архитектурные ограничения
@@ -151,9 +167,7 @@ cd telegram-ws-proxy
 - собственные функции Telegram, не связанные с прокси;
 - изменение `tgnet`;
 - полноценный новый proxy UI;
-- автоматическая публикация каждого upstream update;
 - Google Play / RuStore;
-- несколько ABI;
 - полная локализация;
 - updater;
 - расширенная диагностика;
@@ -171,9 +185,9 @@ cd telegram-ws-proxy
 | Лицензионный аудит Telegram ↔ TgWsProxy | Решён: GPL-3.0-only + third-party notices |
 | Выделение `tgwsproxy-core` | Готово: отдельный repo/AAR, Android API 21+ |
 | Telegram integration layer | Реализован: 5 upstream-файлов, собственные API credentials без хранения секретов, CI воспроизводимости |
-| Первый APK | Fast path: ARM64 `afatPrototype` без R8; full gate: `afatStandalone` |
-| Device smoke test | В процессе: предыдущий debug APK имел unusable login UI; требуется повторная проверка standalone APK |
-| Upstream auto-sync | Post-MVP |
+| Первый APK | Готов: full `afatStandalone`, R8, multi-ABI, release signing |
+| Device smoke test | Пройден: UI/login/embedded proxy и подписанная установка работают |
+| Upstream auto-sync | Реализован: scheduled validation + signed GitHub Release |
 
 ## Лицензирование
 
@@ -200,4 +214,4 @@ Third-party notices: [NOTICE.md](NOTICE.md).
 
 ## Обратная связь
 
-Ошибки и задачи фиксируются через [GitHub Issues](https://github.com/Regstar2/telegram-ws-proxy/issues).
+Ошибки и задачи фиксируются через [GitHub Issues](https://github.com/Regstar2/telegram-wsp/issues).
