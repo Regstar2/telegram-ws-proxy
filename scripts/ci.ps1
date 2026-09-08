@@ -292,8 +292,8 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
 
     $generatedNightThemes = @(
-        Join-Path $generatedBrandingRoot 'res/values-night-v21/tgwsproxy_theme.xml',
-        Join-Path $generatedBrandingRoot 'res/values-night-v31/tgwsproxy_theme.xml'
+        (Join-Path $generatedBrandingRoot 'res/values-night-v21/tgwsproxy_theme.xml')
+        (Join-Path $generatedBrandingRoot 'res/values-night-v31/tgwsproxy_theme.xml')
     )
     foreach ($nightThemePath in $generatedNightThemes) {
         if (-not (Test-Path $nightThemePath)) {
