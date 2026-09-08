@@ -59,6 +59,23 @@ if ($buildApkScript -match '--no-daemon') {
 if ($buildApkScript -match 'assembleAfatDebug') {
     throw 'scripts/build-apk.ps1 must not use the Telegram debug/private variant.'
 }
+if ($buildApkScript -notmatch "prepare-integration\.ps1") {
+    throw 'scripts/build-apk.ps1 must refresh the overlay incrementally before building.'
+}
+if ($buildApkScript -notmatch '--parallel') {
+    throw 'scripts/build-apk.ps1 must keep Gradle parallel execution enabled.'
+}
+if ($buildApkScript -notmatch '\[switch\]\$Offline') {
+    throw 'scripts/build-apk.ps1 must expose offline repeat builds.'
+}
+
+$prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
+if ($prepareScript -notmatch 'Reusing pinned Telegram checkout') {
+    throw 'prepare-integration.ps1 must preserve the pinned Telegram checkout for incremental builds.'
+}
+if ($prepareScript -notmatch 'Reusing core AAR') {
+    throw 'prepare-integration.ps1 must reuse an existing pinned core AAR.'
+}
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
 if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
@@ -155,6 +172,11 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($preparedAppBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
         throw 'Prepared Telegram app is missing the ARM64-only prototype filter.'
+    }
+
+    $preparedBootstrap = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java') -Raw
+    if ($preparedBootstrap -notmatch '@connection_mode=cf_first') {
+        throw 'Prepared Telegram bootstrap must prefer the Cloudflare proxy route.'
     }
 
     $changes = @(
