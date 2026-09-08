@@ -80,6 +80,28 @@ integration/branding/res/mipmap-anydpi-v26/tgwsproxy_launcher.xml
 
 Для API < 26 используется legacy mipmap alias. Для API 26+ используется adaptive icon resource. Дополнительные Telegram resource-файлы не попадают в upstream source diff, поэтому лимит **5 upstream-файлов** сохраняется.
 
+## Xiaomi / HyperOS dark-mode compatibility
+
+Pinned Telegram уже явно отключает стандартный Android Force Dark для `Theme.TMessages.Start` через:
+
+```xml
+<item name="android:forceDarkAllowed">false</item>
+```
+
+Это присутствует в upstream `values-v21`, `values-v31` и `values-night`, поэтому Telegram styles **не патчатся**.
+
+На Xiaomi/MIUI/HyperOS существует дополнительный vendor-level механизм глобальной инверсии для приложений, который может применяться к fork package независимо от стандартного Android opt-out. Xiaomi документирует manifest metadata `force_dark_google=true` как способ отключить MIUI forced inversion для приложения, которое само управляет своей тёмной темой.
+
+Поэтому generated standalone manifest дополнительно содержит:
+
+```xml
+<meta-data android:name="force_dark_google" android:value="true" />
+```
+
+Metadata добавляется только в generated `.tgwsproxy/branding/AndroidManifest_standalone.xml`. Исходные Telegram manifest/styles не меняются, количество изменённых upstream-файлов остаётся **5**, а Telegram продолжает использовать собственный механизм тем.
+
+Reference: Xiaomi HyperOS dark-mode adaptation documentation: https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1595
+
 ## Telegram API credentials
 
 Для локального device smoke-test можно использовать собственные `api_id` / `api_hash` без изменения tracked-файлов.
