@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$CorePath = '.work/tgwsproxy-core'
+    [string]$CorePath = '.work/tgwsproxy-core',
+    [switch]$WithTests,
+    [switch]$Offline
 )
 
 Set-StrictMode -Version Latest
@@ -13,7 +15,19 @@ if (-not (Test-Path (Join-Path $coreFull 'settings.gradle.kts'))) { throw "Inval
 $gradle = Get-Command gradle -ErrorAction SilentlyContinue
 if (-not $gradle) { throw 'Gradle was not found in PATH.' }
 
-& $gradle.Source -p $coreFull :core:testDebugUnitTest :core:assembleRelease
+$tasks = @()
+if ($WithTests) {
+    $tasks += ':core:testDebugUnitTest'
+}
+$tasks += ':core:assembleRelease'
+
+$gradleArgs = @($tasks) + @('--daemon', '--build-cache', '--parallel')
+if ($Offline) {
+    $gradleArgs += '--offline'
+}
+
+Write-Host "Building tgwsproxy-core (tests=$WithTests, offline=$Offline)"
+& $gradle.Source -p $coreFull @gradleArgs
 if ($LASTEXITCODE -ne 0) { throw "tgwsproxy-core Gradle build failed with exit code $LASTEXITCODE" }
 
 $artifact = Join-Path $coreFull 'core/build/outputs/aar/core-release.aar'
