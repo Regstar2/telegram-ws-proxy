@@ -1,0 +1,236 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag to release. Empty means the workflow ref.
+        required: false
+        type: string
+        default: ''
+      revision:
+        description: Telegram-WSP revision for this Telegram version.
+        required: true
+        type: string
+        default: '1'
+      prerelease:
+        description: Publish as a prerelease.
+        required: true
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      revision:
+        required: false
+        type: string
+        default: '1'
+      prerelease:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.ref || github.sha }}-${{ inputs.revision }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish signed APK
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: false
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: pwsh
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          if ($LASTEXITCODE -ne 0) { throw "sdkmanager failed with exit code $LASTEXITCODE" }
+
+      - name: Install Gradle 8.2.1 for tgwsproxy-core
+        shell: pwsh
+        run: |
+          $tools = Join-Path $PWD '.tools'
+          $zip = Join-Path $tools 'gradle-8.2.1-bin.zip'
+          $home = Join-Path $tools 'gradle-8.2.1'
+          New-Item -ItemType Directory -Path $tools -Force | Out-Null
+          if (-not (Test-Path $home)) {
+            Invoke-WebRequest 'https://services.gradle.org/distributions/gradle-8.2.1-bin.zip' -OutFile $zip
+            Expand-Archive -Path $zip -DestinationPath $tools -Force
+          }
+          "TGWSP_CORE_GRADLE=$home\bin\gradle.bat" >> $env:GITHUB_ENV
+
+      - name: Set up Gradle 8.11.1 for Telegram
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Validate release secrets
+        shell: pwsh
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          foreach ($name in @('RELEASE_KEYSTORE_BASE64', 'RELEASE_KEYSTORE_PASSWORD', 'TELEGRAM_API_ID', 'TELEGRAM_API_HASH')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Required GitHub Actions secret is missing: $name"
+            }
+          }
+
+      - name: Restore release keystore
+        shell: pwsh
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          New-Item -ItemType Directory -Path '.signing' -Force | Out-Null
+          $bytes = [Convert]::FromBase64String($env:RELEASE_KEYSTORE_BASE64)
+          [IO.File]::WriteAllBytes((Join-Path $PWD '.signing\telegram-wsp-release.p12'), $bytes)
+
+      - name: Build signed release
+        shell: pwsh
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_WSP_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+        run: ./scripts/build-release.ps1
+
+      - name: Package Corresponding Source
+        shell: pwsh
+        run: ./scripts/package-release-source.ps1
+
+      - name: Prepare release metadata
+        id: metadata
+        shell: pwsh
+        env:
+          RELEASE_REVISION: ${{ inputs.revision }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if ($env:RELEASE_REVISION -notmatch '^\d+$') { throw 'revision must contain decimal digits only.' }
+          $upstream = Get-Content 'config/upstream.json' -Raw | ConvertFrom-Json
+          $core = Get-Content 'config/core.json' -Raw | ConvertFrom-Json
+          $tag = "v$($upstream.telegramVersion)-wsp.$($env:RELEASE_REVISION)"
+          $versionCode = ([int]$upstream.telegramBuild * 10) + 9
+          $apk = Resolve-Path 'dist/Telegram-WSP-release.apk'
+          $apkSha = (Get-FileHash $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+          $commit = (git rev-parse HEAD).Trim()
+          $download = "https://github.com/$($env:REPOSITORY)/releases/download/$tag/Telegram-WSP-release.apk"
+
+          $latest = [ordered]@{
+            versionName = [string]$upstream.telegramVersion
+            versionCode = $versionCode
+            telegramBuild = [int]$upstream.telegramBuild
+            revision = [int]$env:RELEASE_REVISION
+            tag = $tag
+            projectCommit = $commit
+            telegramCommit = [string]$upstream.pinnedCommit
+            coreCommit = [string]$core.pinnedCommit
+            apk = $download
+            apkSha256 = $apkSha
+            publishedAt = (Get-Date).ToUniversalTime().ToString('o')
+            minimumSdk = 21
+          }
+          [IO.File]::WriteAllText('dist/latest.json', ($latest | ConvertTo-Json -Depth 4) + [Environment]::NewLine)
+
+          $notes = @"
+          # Telegram-WSP $($upstream.telegramVersion)
+
+          - Telegram upstream: $($upstream.telegramVersion) ($($upstream.telegramBuild))
+          - Telegram commit: $($upstream.pinnedCommit)
+          - tgwsproxy-core commit: $($core.pinnedCommit)
+          - Android package: org.telegram.messenger.web
+          - APK SHA-256: $apkSha
+          - Release revision: $($env:RELEASE_REVISION)
+
+          The APK is signed with the persistent Telegram-WSP release key. Exact source components used to reproduce this build are attached to the release.
+          "@
+          [IO.File]::WriteAllText('dist/release-notes.md', $notes.Trim() + [Environment]::NewLine)
+
+          $checksumFiles = @(
+            Get-ChildItem 'dist' -File |
+              Where-Object { $_.Name -notin @('SHA256SUMS.txt', 'release-notes.md') }
+            Get-ChildItem 'dist/source' -File
+          )
+          $checksumLines = foreach ($file in $checksumFiles) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          [IO.File]::WriteAllLines('dist/SHA256SUMS.txt', $checksumLines)
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+          "title=Telegram-WSP $($upstream.telegramVersion) (WSP $($env:RELEASE_REVISION))" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_COMMIT: ${{ steps.metadata.outputs.commit }}
+          RELEASE_TITLE: ${{ steps.metadata.outputs.title }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          $assets = @(
+            (Resolve-Path 'dist/Telegram-WSP-release.apk').Path
+            (Resolve-Path 'dist/latest.json').Path
+            (Resolve-Path 'dist/SHA256SUMS.txt').Path
+          )
+          $assets += @(Get-ChildItem 'dist/source' -File | ForEach-Object { $_.FullName })
+
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          $exists = $LASTEXITCODE -eq 0
+
+          if ($exists) {
+            gh release upload $env:RELEASE_TAG @assets --clobber --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw 'gh release upload failed.' }
+            gh release edit $env:RELEASE_TAG --title $env:RELEASE_TITLE --notes-file 'dist/release-notes.md' --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw 'gh release edit failed.' }
+          } else {
+            $arguments = @('release', 'create', $env:RELEASE_TAG) + $assets + @(
+              '--title', $env:RELEASE_TITLE,
+              '--notes-file', 'dist/release-notes.md',
+              '--target', $env:RELEASE_COMMIT,
+              '--repo', $env:GITHUB_REPOSITORY
+            )
+            if ($env:PRERELEASE -eq 'true') { $arguments += '--prerelease' }
+            & gh @arguments
+            if ($LASTEXITCODE -ne 0) { throw 'gh release create failed.' }
+          }
+
+      - name: Release summary
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          "## Telegram-WSP release" >> $env:GITHUB_STEP_SUMMARY
+          "- Tag: ``$env:RELEASE_TAG``" >> $env:GITHUB_STEP_SUMMARY
+          "- APK: ``Telegram-WSP-release.apk``" >> $env:GITHUB_STEP_SUMMARY
+          "- Update feed: ``https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download/latest.json``" >> $env:GITHUB_STEP_SUMMARY
