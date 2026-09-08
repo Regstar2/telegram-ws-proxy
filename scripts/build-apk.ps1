@@ -1,13 +1,20 @@
 [CmdletBinding()]
 param(
     [string]$TelegramPath = '.work/telegram',
-    [switch]$Full
+    [switch]$Full,
+    [switch]$Offline,
+    [switch]$SkipPrepare
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
+
+if (-not $SkipPrepare) {
+    & (Join-Path $PSScriptRoot 'prepare-integration.ps1')
+}
+
 $telegram = [System.IO.Path]::GetFullPath((Join-Path $root $TelegramPath))
 
 if (-not (Test-Path (Join-Path $telegram '.git'))) {
@@ -28,10 +35,16 @@ if (-not (Test-Path $buildVarsPath)) {
 
 $buildVars = Get-Content $buildVarsPath -Raw
 if ($buildVars -notmatch 'BuildConfig\.TELEGRAM_API_ID') {
-    throw 'Telegram API credential overlay is not applied. Run prepare-integration.ps1 first.'
+    throw 'Telegram API credential overlay is not applied.'
 }
 if ($buildVars -notmatch 'public static boolean SUPPORTS_PASSKEYS = false;') {
-    throw 'Fork passkey guard is not applied. Run prepare-integration.ps1 from the current branch first.'
+    throw 'Fork passkey guard is not applied.'
+}
+
+$bootstrapPath = Join-Path $telegram 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java'
+$bootstrap = Get-Content $bootstrapPath -Raw
+if ($bootstrap -notmatch '@connection_mode=cf_first') {
+    throw 'Embedded TgWsProxy runtime is not configured for cf_first.'
 }
 
 $gradle = Get-Command gradle -ErrorAction SilentlyContinue
@@ -43,16 +56,20 @@ if ($Full) {
     $task = ':TMessagesProj_AppStandalone:assembleAfatStandalone'
     $variant = 'standalone'
     $mode = 'full standalone'
-    $gradleArgs = @($task, '--daemon', '--build-cache')
+    $gradleArgs = @($task, '--daemon', '--build-cache', '--parallel')
 } else {
     $task = ':TMessagesProj_AppStandalone:assembleAfatPrototype'
     $variant = 'prototype'
     $mode = 'fast ARM64 prototype'
-    $gradleArgs = @($task, '--daemon', '--build-cache', '-PTGWS_PROXY_ARM64_ONLY=true')
+    $gradleArgs = @($task, '--daemon', '--build-cache', '--parallel', '-PTGWS_PROXY_ARM64_ONLY=true')
+}
+if ($Offline) {
+    $gradleArgs += '--offline'
 }
 
 Write-Host "Building Telegram APK mode: $mode"
 Write-Host "Gradle task: $task"
+Write-Host "Offline dependency resolution: $Offline"
 
 Push-Location $telegram
 try {
