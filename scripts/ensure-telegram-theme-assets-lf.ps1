@@ -54,6 +54,32 @@ function Test-ContainsCarriageReturn([string]$Path) {
     return $bytes -contains [byte]13
 }
 
+function Convert-CrlfToLf([string]$Path) {
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $stream = New-Object System.IO.MemoryStream
+
+    try {
+        for ($index = 0; $index -lt $bytes.Length; $index++) {
+            $current = $bytes[$index]
+
+            if (
+                $current -eq [byte]13 -and
+                ($index + 1) -lt $bytes.Length -and
+                $bytes[$index + 1] -eq [byte]10
+            ) {
+                continue
+            }
+
+            $stream.WriteByte($current)
+        }
+
+        [System.IO.File]::WriteAllBytes($Path, $stream.ToArray())
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 $crlfAssets = @(
     foreach ($asset in $themeAssets) {
         $assetPath = Join-Path $telegram ($asset -replace '/', [System.IO.Path]::DirectorySeparatorChar)
@@ -66,10 +92,8 @@ $crlfAssets = @(
 if ($crlfAssets.Count -gt 0) {
     Write-Host "Normalizing Telegram theme assets to LF: $($crlfAssets.Count) file(s)"
     foreach ($asset in $crlfAssets) {
-        & git -C $telegram checkout HEAD -- $asset
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to restore LF line endings for Telegram theme asset: $asset"
-        }
+        $assetPath = Join-Path $telegram ($asset -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+        Convert-CrlfToLf $assetPath
     }
 }
 
@@ -83,7 +107,18 @@ $invalidAssets = @(
 )
 
 if ($invalidAssets.Count -gt 0) {
-    throw "Telegram .attheme assets still contain CR bytes: $($invalidAssets -join ', ')"
+    throw "Telegram .attheme assets still contain CR bytes after CRLF normalization: $($invalidAssets -join ', ')"
+}
+
+$unexpectedChanges = @(
+    & git -C $telegram status --porcelain -- $themeAssets |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
+if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to verify Telegram theme asset Git status.'
+}
+if ($unexpectedChanges.Count -gt 0) {
+    throw "LF normalization changed tracked Telegram theme content: $($unexpectedChanges -join ', ')"
 }
 
 Write-Host "Telegram theme assets use LF line endings: $($themeAssets.Count) file(s)"
