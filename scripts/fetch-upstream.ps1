@@ -75,7 +75,6 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to fetch Telegram commit $commit." }
 & git -C $destinationPath checkout --detach FETCH_HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Failed to checkout fetched Telegram commit.' }
 
-& (Join-Path $PSScriptRoot 'ensure-telegram-theme-assets-lf.ps1') -TelegramPath $destinationPath
 
 $actual = (& git -C $destinationPath rev-parse HEAD).Trim()
 if ($actual -ne $commit) {
