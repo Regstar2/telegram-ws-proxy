@@ -84,8 +84,11 @@ if ($themeLfScript -notmatch 'WriteAllBytes') {
 if ($themeLfScript -notmatch 'ignore-space-at-eol') {
     throw 'Theme normalization must only clean up line-ending-only changes from the previous helper.'
 }
-if ($themeLfScript -match '\*\.attheme text eol=lf') {
-    throw 'Theme normalization must not keep the obsolete local Git attribute rule.'
+if ($themeLfScript -match '\$attributeRule\s*=') {
+    throw 'Theme normalization must not add a local Git attribute rule for upstream assets.'
+}
+if ($themeLfScript -notmatch "Trim\(\) -ne '\*\.attheme text eol=lf'") {
+    throw 'Theme normalization must remove the obsolete local Git attribute rule left by earlier diagnostics.'
 }
 
 $buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
