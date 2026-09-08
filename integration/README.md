@@ -35,24 +35,27 @@ TgWsProxyCore.start()
 ConnectionsManager.setProxySettings(...)
 ```
 
-Bootstrap генерирует локальный 16-byte MTProto secret при первом запуске, сохраняет его только в application SharedPreferences и использует один и тот же secret для локального listener и штатного Telegram proxy API.
+Bootstrap генерирует локальный 16-byte MTProto secret при первом запуске, сохраняет его только в application SharedPreferences и использует один и тот же secret для локального listener и штатного Telegram proxy API. Встроенный runtime по умолчанию использует `connection_mode=cf_first`: сначала `cf_proxy_ws`, затем разрешённые fallback-маршруты.
 
 Если core не запускается, managed localhost proxy не включается. Если ранее управляемый proxy был активен, bootstrap отключает только собственную конфигурацию и не сбрасывает произвольный сторонний proxy.
 
 ## Применение
 
+Обычная подготовка теперь инкрементальная:
+
+```powershell
+./scripts/prepare-integration.ps1
+```
+
+Скрипт переиспользует pinned Telegram checkout и уже собранный AAR, если их commit совпадает с конфигурацией. Это сохраняет Gradle/CMake outputs Telegram между итерациями.
+
+`-Force` предназначен только для полного сброса generated worktree:
+
 ```powershell
 ./scripts/prepare-integration.ps1 -Force
 ```
 
-Скрипт:
-
-1. получает pinned Telegram;
-2. получает pinned `tgwsproxy-core`;
-3. собирает release AAR;
-4. кладёт AAR в локальный `.work/telegram/.tgwsproxy/`;
-5. применяет четыре точечных изменения и копирует bootstrap source;
-6. проверяет `git diff --check`, запрет изменений `tgnet` и diff budget.
+`-RebuildCore` принудительно пересобирает AAR без сброса Telegram checkout. `-VerifyCore` дополнительно запускает unit tests core.
 
 `.tgwsproxy/` исключается только локально через `.git/info/exclude` и не является частью upstream source diff.
 
@@ -89,6 +92,8 @@ TELEGRAM_API_HASH=<your-api-hash>
 ./scripts/build-apk.ps1
 ```
 
+Команда сама выполняет инкрементальный `prepare-integration.ps1`; повторно вызывать `-Force` перед каждой сборкой не нужно.
+
 Он вызывает `:TMessagesProj_AppStandalone:assembleAfatPrototype` со следующими свойствами:
 
 - `DEBUG_VERSION=false`;
@@ -96,13 +101,23 @@ TELEGRAM_API_HASH=<your-api-hash>
 - `minifyEnabled=false` — R8 не запускается;
 - только `arm64-v8a`;
 - Gradle daemon включён;
-- Gradle build cache включён.
+- Gradle build cache включён;
+- Gradle parallel execution включён;
+- pinned Telegram checkout и core AAR переиспользуются между сборками.
 
 Ожидаемый быстрый APK:
 
 ```text
 .work/telegram/TMessagesProj_AppStandalone/build/outputs/apk/afat/prototype/app.apk
 ```
+
+После первой успешной сборки зависимости уже находятся в локальном Gradle cache. Для максимально быстрого повторного цикла можно запретить сетевое разрешение зависимостей:
+
+```powershell
+./scripts/build-apk.ps1 -Offline
+```
+
+Если локального dependency cache недостаточно, повторите без `-Offline`.
 
 Полная acceptance-сборка сохраняется отдельно:
 
