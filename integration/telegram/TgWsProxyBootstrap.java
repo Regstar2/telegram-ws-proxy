@@ -88,6 +88,14 @@ final class TgWsProxyBootstrap {
 
             int background = Theme.getColor(Theme.key_windowBackgroundWhite);
             int blackText = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+            int blackTextNonAnimated =
+                    Theme.getNonAnimatedColor(Theme.key_windowBackgroundWhiteBlackText);
+            int blackTextCurrent =
+                    Theme.getCurrentColor(Theme.key_windowBackgroundWhiteBlackText);
+            int blackTextDefault =
+                    Theme.getDefaultColor(Theme.key_windowBackgroundWhiteBlackText);
+            boolean blackTextPresent =
+                    Theme.hasThemeKey(Theme.key_windowBackgroundWhiteBlackText);
 
             Log.i(
                     THEME_DIAGNOSTIC_TAG,
@@ -99,8 +107,13 @@ final class TgWsProxyBootstrap {
                             + " activeTheme=" + activeTheme
                             + " currentThemeNight=" + Theme.isCurrentThemeNight()
                             + " currentThemeDark=" + Theme.isCurrentThemeDark()
+                            + " animatingColor=" + Theme.isAnimatingColor()
                             + " windowBackgroundWhite=0x" + Integer.toHexString(background)
                             + " windowBackgroundWhiteBlackText=0x" + Integer.toHexString(blackText)
+                            + " blackTextNonAnimated=0x" + Integer.toHexString(blackTextNonAnimated)
+                            + " blackTextCurrent=0x" + Integer.toHexString(blackTextCurrent)
+                            + " blackTextDefault=0x" + Integer.toHexString(blackTextDefault)
+                            + " blackTextPresent=" + blackTextPresent
             );
         } catch (Throwable error) {
             Log.e(THEME_DIAGNOSTIC_TAG, "Theme diagnostics failed", error);
