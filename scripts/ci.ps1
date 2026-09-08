@@ -30,6 +30,8 @@ $required = @(
     'scripts/apply-integration.ps1',
     'scripts/prepare-integration.ps1',
     'scripts/build-apk.ps1',
+    'scripts/build-release.ps1',
+    'scripts/create-release-keystore.ps1',
     'scripts/diagnose-xiaomi-dark-mode.ps1',
     'scripts/ensure-telegram-theme-assets-lf.ps1'
 )
@@ -187,6 +189,436 @@ if ($applyScript -notmatch '\.tgwsproxy/theme-assets') {
 }
 if ($applyScript -notmatch 'sourceSets\.standalone\.assets\.srcDir' -or $applyScript -notmatch 'sourceSets\.prototype\.assets\.srcDir') {
     throw 'Integration script must attach LF theme assets to standalone and prototype source sets.'
+}
+
+if ($applyScript -notmatch 'appAfatStandaloneBrandingBlock') {
+    throw 'Integration script must override the afat product-flavor standalone manifest with Telegram-WSP branding.'
+}
+
+$releaseBuildScript = Get-Content (Join-Path $root 'scripts/build-release.ps1') -Raw
+if ($releaseBuildScript -notmatch 'build-apk\.ps1' -or $releaseBuildScript -notmatch "'-Full'") {
+    throw 'Release build script must delegate to the full afatStandalone build.'
+}
+if ($releaseBuildScript -notmatch 'TELEGRAM_WSP_KEYSTORE_PASSWORD') {
+    throw 'Release build script must inject signing credentials only through the process environment.'
+}
+if ($releaseBuildScript -notmatch 'apksigner\.bat' -or $releaseBuildScript -notmatch 'verify --verbose --print-certs') {
+    throw 'Release build script must verify the produced APK signature.'
+}
+if ($releaseBuildScript -notmatch "application-label:'Telegram-WSP'") {
+    throw 'Release build script must verify Telegram-WSP branding in the final APK.'
+}
+if ($releaseBuildScript -notmatch 'Remove-Item Env:TELEGRAM_WSP_KEYSTORE_PASSWORD') {
+    throw 'Release build script must clear the signing password from the process environment.'
+}
+
+$keystoreScript = Get-Content (Join-Path $root 'scripts/create-release-keystore.ps1') -Raw
+if ($keystoreScript -notmatch 'PKCS12' -or $keystoreScript -notmatch '4096' -or $keystoreScript -notmatch 'SHA256withRSA') {
+    throw 'Release keystore script must create the expected PKCS12 RSA signing key.'
+}
+if ($keystoreScript -notmatch 'minimum 12 characters') {
+    throw 'Release keystore script must enforce the minimum password length.'
+}
+
+$gitIgnoreText = Get-Content (Join-Path $root '.gitignore') -Raw
+if ($gitIgnoreText -notmatch '(?m)^/\.signing/
+$licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
+if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
+    throw 'Project LICENSE is expected to contain GNU GPL version 3.'
+}
+
+$licensingText = Get-Content (Join-Path $root 'docs/licensing.md') -Raw
+if ($licensingText -notmatch 'GPL-3\.0-only') {
+    throw 'docs/licensing.md does not record the GPL-3.0-only project policy.'
+}
+if ($licensingText -notmatch 'Corresponding Source') {
+    throw 'docs/licensing.md does not record the Corresponding Source release gate.'
+}
+
+$upstream = Get-Content (Join-Path $root 'config/upstream.json') -Raw | ConvertFrom-Json
+$core = Get-Content (Join-Path $root 'config/core.json') -Raw | ConvertFrom-Json
+$telegramCommit = [string]$upstream.pinnedCommit
+$coreCommit = [string]$core.pinnedCommit
+
+if ([string]::IsNullOrWhiteSpace([string]$upstream.repository)) {
+    throw 'Upstream repository is empty.'
+}
+if ($telegramCommit -notmatch '^[0-9a-f]{40}$') {
+    throw "Invalid pinned Telegram commit: '$telegramCommit'"
+}
+if ([string]::IsNullOrWhiteSpace([string]$core.repository)) {
+    throw 'Core repository is empty.'
+}
+if ($coreCommit -notmatch '^[0-9a-f]{40}$') {
+    throw "Invalid pinned core commit: '$coreCommit'"
+}
+
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $forbiddenTracked = @(
+        (& git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**' '.signing/**' '*.p12') |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+    if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
+    if ($forbiddenTracked.Count -gt 0) {
+        throw "Forbidden private/generated files are tracked: $($forbiddenTracked -join ', ')"
+    }
+}
+
+$patchFiles = @(Get-ChildItem (Join-Path $root 'patches') -File -Filter '*.patch' -ErrorAction SilentlyContinue)
+foreach ($patch in $patchFiles) {
+    $patchContent = Get-Content $patch.FullName -Raw
+    if ($patchContent -match 'TMessagesProj/jni/tgnet/') {
+        throw "Patch modifies forbidden tgnet path: $($patch.Name)"
+    }
+}
+
+$telegramWorktree = Join-Path $root '.work/telegram'
+if (Test-Path (Join-Path $telegramWorktree '.git')) {
+    $actual = (& git -C $telegramWorktree rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to read Telegram worktree HEAD.' }
+    if ($actual -ne $telegramCommit) {
+        throw "Local Telegram checkout is not pinned: $actual != $telegramCommit"
+    }
+
+    $tgnetChanges = @(& git -C $telegramWorktree status --porcelain -- 'TMessagesProj/jni/tgnet/')
+    if ($tgnetChanges.Count -gt 0) {
+        throw "Prepared integration modified forbidden tgnet paths: $($tgnetChanges -join ', ')"
+    }
+
+    $preparedBuildVarsPath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
+    $preparedBuildVars = Get-Content $preparedBuildVarsPath -Raw
+    if ($preparedBuildVars -notmatch 'public static boolean SUPPORTS_PASSKEYS = false;') {
+        throw 'Prepared Telegram fork still enables official-app-only passkeys.'
+    }
+    if ($preparedBuildVars -notmatch 'BuildConfig\.TELEGRAM_API_ID') {
+        throw 'Prepared Telegram BuildVars does not use injected API credentials.'
+    }
+
+    $preparedCoreBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj/build.gradle') -Raw
+    if ($preparedCoreBuild -notmatch '(?m)^        prototype \{') {
+        throw 'Prepared Telegram core is missing the fast prototype build type.'
+    }
+    if ($preparedCoreBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false[\s\S]*?DEBUG_VERSION", "false"[\s\S]*?DEBUG_PRIVATE_VERSION", "false"') {
+        throw 'Prepared Telegram core prototype must be non-minified with debug/private flags disabled.'
+    }
+    if ($preparedCoreBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
+        throw 'Prepared Telegram core is missing the ARM64-only prototype filter.'
+    }
+    if ($preparedCoreBuild -notmatch '\.tgwsproxy/theme-assets') {
+        throw 'Prepared Telegram core does not use the generated LF theme asset overlay.'
+    }
+
+    $generatedThemeRoot = Join-Path $telegramWorktree '.tgwsproxy/theme-assets'
+    $generatedThemeFiles = @(Get-ChildItem $generatedThemeRoot -File -Filter '*.attheme' -ErrorAction SilentlyContinue)
+    if ($generatedThemeFiles.Count -eq 0) {
+        throw 'Prepared Telegram LF theme overlay is missing.'
+    }
+    foreach ($generatedThemeFile in $generatedThemeFiles) {
+        $generatedThemeBytes = [System.IO.File]::ReadAllBytes($generatedThemeFile.FullName)
+        if ($generatedThemeBytes -contains [byte]13) {
+            throw "Prepared Telegram LF theme overlay contains CR bytes: $($generatedThemeFile.Name)"
+        }
+    }
+
+    $preparedAppBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/build.gradle') -Raw
+    if ($preparedAppBuild -notmatch '(?m)^        prototype \{') {
+        throw 'Prepared Telegram app is missing the fast prototype build type.'
+    }
+    if ($preparedAppBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false') {
+        throw 'Prepared Telegram app prototype must disable minification.'
+    }
+    if ($preparedAppBuild -notmatch 'sourceSets\.prototype') {
+        throw 'Prepared Telegram app prototype must use the standalone manifest.'
+    }
+    if ($preparedAppBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
+        throw 'Prepared Telegram app is missing the ARM64-only prototype filter.'
+    }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/AndroidManifest_standalone\.xml') {
+        throw 'Prepared Telegram app does not use the generated branded standalone manifest.'
+    }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/res') {
+        throw 'Prepared Telegram app does not include generated launcher branding resources.'
+    }
+
+    $generatedBrandingRoot = Join-Path $telegramWorktree '.tgwsproxy/branding'
+    $generatedBrandingManifestPath = Join-Path $generatedBrandingRoot 'AndroidManifest_standalone.xml'
+    $generatedBrandingIconPath = Join-Path $generatedBrandingRoot 'res/drawable-nodpi/tgwsproxy_launcher_source.png'
+    $generatedLegacyLauncherPath = Join-Path $generatedBrandingRoot 'res/values/tgwsproxy_launcher.xml'
+    $generatedAdaptiveLauncherPath = Join-Path $generatedBrandingRoot 'res/mipmap-anydpi-v26/tgwsproxy_launcher.xml'
+    foreach ($brandingPath in @($generatedBrandingManifestPath, $generatedBrandingIconPath, $generatedLegacyLauncherPath, $generatedAdaptiveLauncherPath)) {
+        if (-not (Test-Path $brandingPath)) {
+            throw "Prepared Telegram branding file is missing: $brandingPath"
+        }
+    }
+
+    $generatedBrandingManifest = Get-Content $generatedBrandingManifestPath -Raw
+    if ($generatedBrandingManifest -notmatch 'android:icon="@mipmap/tgwsproxy_launcher"') {
+        throw 'Prepared standalone manifest does not use TgWsProxy as the launcher icon.'
+    }
+    if ($generatedBrandingManifest -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launcher"') {
+        throw 'Prepared standalone manifest does not use TgWsProxy as the round launcher icon.'
+    }
+    if ($generatedBrandingManifest -notmatch 'android:label="Telegram-WSP"') {
+        throw 'Prepared standalone manifest does not use Telegram-WSP as the application label.'
+    }
+
+    $generatedBrandingBlob = (& git hash-object $generatedBrandingIconPath).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to hash generated launcher icon.' }
+    if ($generatedBrandingBlob -ne $brandingBlob) {
+        throw "Generated launcher icon differs from tracked source: $generatedBrandingBlob != $brandingBlob"
+    }
+
+    $preparedBootstrap = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java') -Raw
+    if ($preparedBootstrap -notmatch '@connection_mode=cf_first') {
+        throw 'Prepared Telegram bootstrap must prefer the Cloudflare proxy route.'
+    }
+    if ($preparedBootstrap -notmatch 'TelegramWSPTheme') {
+        throw 'Diagnostic branch must emit Telegram runtime theme state.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getActiveTheme\(\)') {
+        throw 'Diagnostic branch must report the active Telegram theme.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.isCurrentThemeDark\(\)') {
+        throw 'Diagnostic branch must report whether the active Telegram theme is dark.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.isAnimatingColor\(\)') {
+        throw 'Diagnostic branch must report whether Telegram theme animation is active.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getNonAnimatedColor\(') {
+        throw 'Diagnostic branch must report the non-animated Telegram theme color.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getCurrentColor\(') {
+        throw 'Diagnostic branch must report the currentColors value.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.hasThemeKey\(') {
+        throw 'Diagnostic branch must report whether currentColors contains the theme key.'
+    }
+    if ($preparedBootstrap -notmatch 'key_windowBackgroundWhiteBlackText') {
+        throw 'Diagnostic branch must report the intro text color key.'
+    }
+
+    $changes = @(
+        & git -C $telegramWorktree status --porcelain |
+            ForEach-Object { if ($_.Length -ge 4) { $_.Substring(3).Trim('"') } } |
+            Where-Object { $_ -and -not $_.StartsWith('.tgwsproxy/') }
+    )
+    if ($changes.Count -gt 5) {
+        throw "Prepared integration exceeds the 5-file source diff budget: $($changes.Count)"
+    }
+}
+
+$coreWorktree = Join-Path $root '.work/tgwsproxy-core'
+if (Test-Path (Join-Path $coreWorktree '.git')) {
+    $actualCore = (& git -C $coreWorktree rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to read core worktree HEAD.' }
+    if ($actualCore -ne $coreCommit) {
+        throw "Local core checkout is not pinned: $actualCore != $coreCommit"
+    }
+}
+
+Write-Host 'Repository checks passed.'
+Write-Host "Pinned Telegram commit: $telegramCommit"
+Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
+ -or $gitIgnoreText -notmatch '(?m)^\*\.p12
+$licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
+if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
+    throw 'Project LICENSE is expected to contain GNU GPL version 3.'
+}
+
+$licensingText = Get-Content (Join-Path $root 'docs/licensing.md') -Raw
+if ($licensingText -notmatch 'GPL-3\.0-only') {
+    throw 'docs/licensing.md does not record the GPL-3.0-only project policy.'
+}
+if ($licensingText -notmatch 'Corresponding Source') {
+    throw 'docs/licensing.md does not record the Corresponding Source release gate.'
+}
+
+$upstream = Get-Content (Join-Path $root 'config/upstream.json') -Raw | ConvertFrom-Json
+$core = Get-Content (Join-Path $root 'config/core.json') -Raw | ConvertFrom-Json
+$telegramCommit = [string]$upstream.pinnedCommit
+$coreCommit = [string]$core.pinnedCommit
+
+if ([string]::IsNullOrWhiteSpace([string]$upstream.repository)) {
+    throw 'Upstream repository is empty.'
+}
+if ($telegramCommit -notmatch '^[0-9a-f]{40}$') {
+    throw "Invalid pinned Telegram commit: '$telegramCommit'"
+}
+if ([string]::IsNullOrWhiteSpace([string]$core.repository)) {
+    throw 'Core repository is empty.'
+}
+if ($coreCommit -notmatch '^[0-9a-f]{40}$') {
+    throw "Invalid pinned core commit: '$coreCommit'"
+}
+
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $forbiddenTracked = @(
+        (& git ls-files 'AGENTS.md' '.project-rules/**' '.work/**' 'dist/**') |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+    if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
+    if ($forbiddenTracked.Count -gt 0) {
+        throw "Forbidden private/generated files are tracked: $($forbiddenTracked -join ', ')"
+    }
+}
+
+$patchFiles = @(Get-ChildItem (Join-Path $root 'patches') -File -Filter '*.patch' -ErrorAction SilentlyContinue)
+foreach ($patch in $patchFiles) {
+    $patchContent = Get-Content $patch.FullName -Raw
+    if ($patchContent -match 'TMessagesProj/jni/tgnet/') {
+        throw "Patch modifies forbidden tgnet path: $($patch.Name)"
+    }
+}
+
+$telegramWorktree = Join-Path $root '.work/telegram'
+if (Test-Path (Join-Path $telegramWorktree '.git')) {
+    $actual = (& git -C $telegramWorktree rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to read Telegram worktree HEAD.' }
+    if ($actual -ne $telegramCommit) {
+        throw "Local Telegram checkout is not pinned: $actual != $telegramCommit"
+    }
+
+    $tgnetChanges = @(& git -C $telegramWorktree status --porcelain -- 'TMessagesProj/jni/tgnet/')
+    if ($tgnetChanges.Count -gt 0) {
+        throw "Prepared integration modified forbidden tgnet paths: $($tgnetChanges -join ', ')"
+    }
+
+    $preparedBuildVarsPath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
+    $preparedBuildVars = Get-Content $preparedBuildVarsPath -Raw
+    if ($preparedBuildVars -notmatch 'public static boolean SUPPORTS_PASSKEYS = false;') {
+        throw 'Prepared Telegram fork still enables official-app-only passkeys.'
+    }
+    if ($preparedBuildVars -notmatch 'BuildConfig\.TELEGRAM_API_ID') {
+        throw 'Prepared Telegram BuildVars does not use injected API credentials.'
+    }
+
+    $preparedCoreBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj/build.gradle') -Raw
+    if ($preparedCoreBuild -notmatch '(?m)^        prototype \{') {
+        throw 'Prepared Telegram core is missing the fast prototype build type.'
+    }
+    if ($preparedCoreBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false[\s\S]*?DEBUG_VERSION", "false"[\s\S]*?DEBUG_PRIVATE_VERSION", "false"') {
+        throw 'Prepared Telegram core prototype must be non-minified with debug/private flags disabled.'
+    }
+    if ($preparedCoreBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
+        throw 'Prepared Telegram core is missing the ARM64-only prototype filter.'
+    }
+    if ($preparedCoreBuild -notmatch '\.tgwsproxy/theme-assets') {
+        throw 'Prepared Telegram core does not use the generated LF theme asset overlay.'
+    }
+
+    $generatedThemeRoot = Join-Path $telegramWorktree '.tgwsproxy/theme-assets'
+    $generatedThemeFiles = @(Get-ChildItem $generatedThemeRoot -File -Filter '*.attheme' -ErrorAction SilentlyContinue)
+    if ($generatedThemeFiles.Count -eq 0) {
+        throw 'Prepared Telegram LF theme overlay is missing.'
+    }
+    foreach ($generatedThemeFile in $generatedThemeFiles) {
+        $generatedThemeBytes = [System.IO.File]::ReadAllBytes($generatedThemeFile.FullName)
+        if ($generatedThemeBytes -contains [byte]13) {
+            throw "Prepared Telegram LF theme overlay contains CR bytes: $($generatedThemeFile.Name)"
+        }
+    }
+
+    $preparedAppBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/build.gradle') -Raw
+    if ($preparedAppBuild -notmatch '(?m)^        prototype \{') {
+        throw 'Prepared Telegram app is missing the fast prototype build type.'
+    }
+    if ($preparedAppBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false') {
+        throw 'Prepared Telegram app prototype must disable minification.'
+    }
+    if ($preparedAppBuild -notmatch 'sourceSets\.prototype') {
+        throw 'Prepared Telegram app prototype must use the standalone manifest.'
+    }
+    if ($preparedAppBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
+        throw 'Prepared Telegram app is missing the ARM64-only prototype filter.'
+    }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/AndroidManifest_standalone\.xml') {
+        throw 'Prepared Telegram app does not use the generated branded standalone manifest.'
+    }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/res') {
+        throw 'Prepared Telegram app does not include generated launcher branding resources.'
+    }
+
+    $generatedBrandingRoot = Join-Path $telegramWorktree '.tgwsproxy/branding'
+    $generatedBrandingManifestPath = Join-Path $generatedBrandingRoot 'AndroidManifest_standalone.xml'
+    $generatedBrandingIconPath = Join-Path $generatedBrandingRoot 'res/drawable-nodpi/tgwsproxy_launcher_source.png'
+    $generatedLegacyLauncherPath = Join-Path $generatedBrandingRoot 'res/values/tgwsproxy_launcher.xml'
+    $generatedAdaptiveLauncherPath = Join-Path $generatedBrandingRoot 'res/mipmap-anydpi-v26/tgwsproxy_launcher.xml'
+    foreach ($brandingPath in @($generatedBrandingManifestPath, $generatedBrandingIconPath, $generatedLegacyLauncherPath, $generatedAdaptiveLauncherPath)) {
+        if (-not (Test-Path $brandingPath)) {
+            throw "Prepared Telegram branding file is missing: $brandingPath"
+        }
+    }
+
+    $generatedBrandingManifest = Get-Content $generatedBrandingManifestPath -Raw
+    if ($generatedBrandingManifest -notmatch 'android:icon="@mipmap/tgwsproxy_launcher"') {
+        throw 'Prepared standalone manifest does not use TgWsProxy as the launcher icon.'
+    }
+    if ($generatedBrandingManifest -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launcher"') {
+        throw 'Prepared standalone manifest does not use TgWsProxy as the round launcher icon.'
+    }
+    if ($generatedBrandingManifest -notmatch 'android:label="Telegram-WSP"') {
+        throw 'Prepared standalone manifest does not use Telegram-WSP as the application label.'
+    }
+
+    $generatedBrandingBlob = (& git hash-object $generatedBrandingIconPath).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to hash generated launcher icon.' }
+    if ($generatedBrandingBlob -ne $brandingBlob) {
+        throw "Generated launcher icon differs from tracked source: $generatedBrandingBlob != $brandingBlob"
+    }
+
+    $preparedBootstrap = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java') -Raw
+    if ($preparedBootstrap -notmatch '@connection_mode=cf_first') {
+        throw 'Prepared Telegram bootstrap must prefer the Cloudflare proxy route.'
+    }
+    if ($preparedBootstrap -notmatch 'TelegramWSPTheme') {
+        throw 'Diagnostic branch must emit Telegram runtime theme state.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getActiveTheme\(\)') {
+        throw 'Diagnostic branch must report the active Telegram theme.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.isCurrentThemeDark\(\)') {
+        throw 'Diagnostic branch must report whether the active Telegram theme is dark.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.isAnimatingColor\(\)') {
+        throw 'Diagnostic branch must report whether Telegram theme animation is active.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getNonAnimatedColor\(') {
+        throw 'Diagnostic branch must report the non-animated Telegram theme color.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getCurrentColor\(') {
+        throw 'Diagnostic branch must report the currentColors value.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.hasThemeKey\(') {
+        throw 'Diagnostic branch must report whether currentColors contains the theme key.'
+    }
+    if ($preparedBootstrap -notmatch 'key_windowBackgroundWhiteBlackText') {
+        throw 'Diagnostic branch must report the intro text color key.'
+    }
+
+    $changes = @(
+        & git -C $telegramWorktree status --porcelain |
+            ForEach-Object { if ($_.Length -ge 4) { $_.Substring(3).Trim('"') } } |
+            Where-Object { $_ -and -not $_.StartsWith('.tgwsproxy/') }
+    )
+    if ($changes.Count -gt 5) {
+        throw "Prepared integration exceeds the 5-file source diff budget: $($changes.Count)"
+    }
+}
+
+$coreWorktree = Join-Path $root '.work/tgwsproxy-core'
+if (Test-Path (Join-Path $coreWorktree '.git')) {
+    $actualCore = (& git -C $coreWorktree rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to read core worktree HEAD.' }
+    if ($actualCore -ne $coreCommit) {
+        throw "Local core checkout is not pinned: $actualCore != $coreCommit"
+    }
+}
+
+Write-Host 'Repository checks passed.'
+Write-Host "Pinned Telegram commit: $telegramCommit"
+Write-Host "Pinned tgwsproxy-core commit: $coreCommit"
+) {
+    throw 'Release signing material must be ignored by Git.'
 }
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw

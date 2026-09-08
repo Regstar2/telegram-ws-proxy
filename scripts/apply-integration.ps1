@@ -161,6 +161,23 @@ if ($build -notmatch [regex]::Escape('../.tgwsproxy/branding/AndroidManifest_sta
     }
 }
 
+
+$appAfatStandaloneMarker = @'
+            sourceSets.standalone {
+                manifest.srcFile '../TMessagesProj/config/release/AndroidManifest_standalone.xml'
+            }
+'@.TrimEnd()
+$appAfatStandaloneBrandingBlock = @'
+            sourceSets.standalone {
+                manifest.srcFile '../.tgwsproxy/branding/AndroidManifest_standalone.xml'
+            }
+'@.TrimEnd()
+if ($build -notmatch "(?ms)productFlavors\s*\{.*?afat\s*\{.*?sourceSets\.standalone\s*\{\s*manifest\.srcFile\s+'\.\./\.tgwsproxy/branding/AndroidManifest_standalone\.xml'") {
+    $count = ([regex]::Matches($build, [regex]::Escape($appAfatStandaloneMarker))).Count
+    if ($count -ne 1) { throw "Telegram afat standalone manifest anchor count is $count; expected 1." }
+    $build = $build.Replace($appAfatStandaloneMarker, $appAfatStandaloneBrandingBlock)
+}
+
 $appAbiMarker = '                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"'
 $appAbiBlock = @'
                 if (project.findProperty("TGWS_PROXY_ARM64_ONLY")?.toBoolean()) {
