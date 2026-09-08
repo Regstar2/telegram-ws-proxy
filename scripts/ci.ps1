@@ -19,6 +19,10 @@ $required = @(
     'docs/product/mvp-scope.md',
     'integration/README.md',
     'integration/telegram/TgWsProxyBootstrap.java',
+    'integration/branding/README.md',
+    'integration/branding/res/drawable-nodpi/tgwsproxy_launcher_source.png',
+    'integration/branding/res/values/tgwsproxy_launcher.xml',
+    'integration/branding/res/mipmap-anydpi-v26/tgwsproxy_launcher.xml',
     'patches/README.md',
     'scripts/fetch-upstream.ps1',
     'scripts/fetch-core.ps1',
@@ -75,6 +79,37 @@ if ($prepareScript -notmatch 'Reusing pinned Telegram checkout') {
 }
 if ($prepareScript -notmatch 'Reusing core AAR') {
     throw 'prepare-integration.ps1 must reuse an existing pinned core AAR.'
+}
+
+$brandingIconPath = Join-Path $root 'integration/branding/res/drawable-nodpi/tgwsproxy_launcher_source.png'
+$brandingBlob = (& git hash-object $brandingIconPath).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Failed to hash launcher icon source.' }
+if ($brandingBlob -ne '7c943f64d8beb01df6e5dd16128fc0ca0a56e863') {
+    throw "Launcher icon source does not match tg-ws-proxy-android/icon.png: $brandingBlob"
+}
+
+$legacyLauncher = Get-Content (Join-Path $root 'integration/branding/res/values/tgwsproxy_launcher.xml') -Raw
+if ($legacyLauncher -notmatch 'type="mipmap" name="tgwsproxy_launcher"') {
+    throw 'Legacy launcher mipmap alias is missing.'
+}
+if ($legacyLauncher -notmatch '@drawable/tgwsproxy_launcher_source') {
+    throw 'Legacy launcher alias must point to the tracked TgWsProxy artwork.'
+}
+
+$adaptiveLauncher = Get-Content (Join-Path $root 'integration/branding/res/mipmap-anydpi-v26/tgwsproxy_launcher.xml') -Raw
+if ($adaptiveLauncher -notmatch '<adaptive-icon') {
+    throw 'API 26+ adaptive launcher resource is missing.'
+}
+if ($adaptiveLauncher -notmatch '@drawable/tgwsproxy_launcher_source') {
+    throw 'Adaptive launcher resource must use the tracked TgWsProxy artwork.'
+}
+
+$applyScript = Get-Content (Join-Path $root 'scripts/apply-integration.ps1') -Raw
+if ($applyScript -notmatch '\.tgwsproxy/branding/AndroidManifest_standalone\.xml') {
+    throw 'Integration script must generate and use the branded standalone manifest.'
+}
+if ($applyScript -notmatch '\.tgwsproxy/branding/res') {
+    throw 'Integration script must attach generated branding resources to the app source sets.'
 }
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
@@ -172,6 +207,37 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($preparedAppBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
         throw 'Prepared Telegram app is missing the ARM64-only prototype filter.'
+    }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/AndroidManifest_standalone\.xml') {
+        throw 'Prepared Telegram app does not use the generated branded standalone manifest.'
+    }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/res') {
+        throw 'Prepared Telegram app does not include generated launcher branding resources.'
+    }
+
+    $generatedBrandingRoot = Join-Path $telegramWorktree '.tgwsproxy/branding'
+    $generatedBrandingManifestPath = Join-Path $generatedBrandingRoot 'AndroidManifest_standalone.xml'
+    $generatedBrandingIconPath = Join-Path $generatedBrandingRoot 'res/drawable-nodpi/tgwsproxy_launcher_source.png'
+    $generatedLegacyLauncherPath = Join-Path $generatedBrandingRoot 'res/values/tgwsproxy_launcher.xml'
+    $generatedAdaptiveLauncherPath = Join-Path $generatedBrandingRoot 'res/mipmap-anydpi-v26/tgwsproxy_launcher.xml'
+    foreach ($brandingPath in @($generatedBrandingManifestPath, $generatedBrandingIconPath, $generatedLegacyLauncherPath, $generatedAdaptiveLauncherPath)) {
+        if (-not (Test-Path $brandingPath)) {
+            throw "Prepared Telegram branding file is missing: $brandingPath"
+        }
+    }
+
+    $generatedBrandingManifest = Get-Content $generatedBrandingManifestPath -Raw
+    if ($generatedBrandingManifest -notmatch 'android:icon="@mipmap/tgwsproxy_launcher"') {
+        throw 'Prepared standalone manifest does not use TgWsProxy as the launcher icon.'
+    }
+    if ($generatedBrandingManifest -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launcher"') {
+        throw 'Prepared standalone manifest does not use TgWsProxy as the round launcher icon.'
+    }
+
+    $generatedBrandingBlob = (& git hash-object $generatedBrandingIconPath).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to hash generated launcher icon.' }
+    if ($generatedBrandingBlob -ne $brandingBlob) {
+        throw "Generated launcher icon differs from tracked source: $generatedBrandingBlob != $brandingBlob"
     }
 
     $preparedBootstrap = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java') -Raw
