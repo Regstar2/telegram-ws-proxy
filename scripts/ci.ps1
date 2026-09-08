@@ -173,6 +173,10 @@ if ($releaseWorkflow -notmatch 'latest\.json' -or $releaseWorkflow -notmatch 'pa
     throw 'Release workflow must publish the update feed and Corresponding Source assets.'
 }
 
+if ($releaseWorkflow -notmatch 'telegramBuild \* 1000' -or $releaseWorkflow -notmatch 'TELEGRAM_WSP_RELEASE_REVISION') {
+    throw 'Release workflow must build and publish the same revision-aware Android versionCode.'
+}
+
 $upstreamWorkflow = Get-Content (Join-Path $root '.github/workflows/upstream-sync.yml') -Raw
 if ($upstreamWorkflow -notmatch 'schedule:' -or $upstreamWorkflow -notmatch 'sync-upstream\.ps1 -Apply' -or $upstreamWorkflow -notmatch 'uses: \./\.github/workflows/release\.yml') {
     throw 'Upstream workflow must check Telegram on a schedule and call the reusable release workflow.'
@@ -230,6 +234,10 @@ if ($applyScript -notmatch 'appAfatStandaloneBrandingBlock') {
     throw 'Integration script must override the afat product-flavor standalone manifest with Telegram-WSP branding.'
 }
 
+if ($applyScript -notmatch 'TELEGRAM_WSP_RELEASE_REVISION' -or $applyScript -notmatch 'defaultConfig\.versionCode \* 1000') {
+    throw 'Integration script must encode the Telegram-WSP release revision into Android versionCode.'
+}
+
 $releaseBuildScript = Get-Content (Join-Path $root 'scripts/build-release.ps1') -Raw
 if ($releaseBuildScript -notmatch 'build-apk\.ps1' -or $releaseBuildScript -notmatch 'Full\s*=\s*\$true') {
     throw 'Release build script must delegate to the full afatStandalone build.'
@@ -259,6 +267,13 @@ if ($releaseBuildScript -notmatch "application-label:'Telegram-WSP'") {
 }
 if ($releaseBuildScript -notmatch 'Remove-Item Env:TELEGRAM_WSP_KEYSTORE_PASSWORD') {
     throw 'Release build script must clear the signing password from the process environment.'
+}
+
+if ($releaseBuildScript -notmatch '\[ValidateRange\(1, 99\)\]\[int\]\$ReleaseRevision' -or $releaseBuildScript -notmatch 'expectedVersionCode') {
+    throw 'Release build script must validate and verify revision-aware Android versionCode.'
+}
+if ($releaseBuildScript -notmatch 'Remove-Item Env:TELEGRAM_WSP_RELEASE_REVISION') {
+    throw 'Release build script must clear the WSP revision environment variable.'
 }
 
 $keystoreScript = Get-Content (Join-Path $root 'scripts/create-release-keystore.ps1') -Raw
@@ -429,6 +444,19 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($preparedBootstrap -match 'TelegramWSPTheme' -or $preparedBootstrap -match 'scheduleThemeDiagnostics') {
         throw 'Release bootstrap must not contain temporary theme diagnostics.'
+    }
+
+    if ($preparedBootstrap -notmatch 'releases/latest/download/latest\.json') {
+        throw 'Prepared Telegram bootstrap must check the stable Telegram-WSP update feed.'
+    }
+    if ($preparedBootstrap -notmatch 'hasSameSigningCertificate' -or $preparedBootstrap -notmatch 'MessageDigest\.getInstance\("SHA-256"\)') {
+        throw 'Prepared Telegram updater must verify both APK signing certificate and SHA-256 before installation.'
+    }
+    if ($preparedBootstrap -notmatch 'FileProvider\.getUriForFile' -or $preparedBootstrap -notmatch 'ACTION_MANAGE_UNKNOWN_APP_SOURCES') {
+        throw 'Prepared Telegram updater must use the Android FileProvider/install-permission flow.'
+    }
+    if ($preparedBootstrap -notmatch 'remoteVersionCode <= currentVersionCode') {
+        throw 'Prepared Telegram updater must compare Android versionCode before offering an update.'
     }
 
     $changes = @(
