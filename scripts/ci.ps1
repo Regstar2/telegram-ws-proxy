@@ -196,8 +196,14 @@ if ($applyScript -notmatch 'appAfatStandaloneBrandingBlock') {
 }
 
 $releaseBuildScript = Get-Content (Join-Path $root 'scripts/build-release.ps1') -Raw
-if ($releaseBuildScript -notmatch 'build-apk\.ps1' -or $releaseBuildScript -notmatch "'-Full'") {
+if ($releaseBuildScript -notmatch 'build-apk\.ps1' -or $releaseBuildScript -notmatch 'Full\s*=\s*\$true') {
     throw 'Release build script must delegate to the full afatStandalone build.'
+}
+if ($releaseBuildScript -match "\$buildArgs\s*=\s*@\('-Full'") {
+    throw 'Release build script must not pass named PowerShell switches through positional array splatting.'
+}
+if ($releaseBuildScript -notmatch 'SkipPrepare\s*=\s*\$true') {
+    throw 'Release build script must call build-apk.ps1 with named SkipPrepare=true.'
 }
 if ($releaseBuildScript -notmatch 'TELEGRAM_WSP_KEYSTORE_PASSWORD') {
     throw 'Release build script must inject signing credentials only through the process environment.'
