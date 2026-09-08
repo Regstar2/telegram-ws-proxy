@@ -48,16 +48,21 @@ Copy-Item -Path (Join-Path $brandingResSource '*') -Destination $brandingResGene
 $brandingManifest = Get-Content $brandingManifestSource -Raw
 $iconMarker = '        android:icon="@mipmap/ic_launcher_sa"'
 $roundIconMarker = '        android:roundIcon="@mipmap/ic_launcher_sa"'
+$labelMarker = '        android:label="@string/AppName"'
 $managedIcon = '        android:icon="@mipmap/tgwsproxy_launcher"'
 $managedRoundIcon = '        android:roundIcon="@mipmap/tgwsproxy_launcher"'
+$managedLabel = '        android:label="Telegram-WSP"'
 
 $iconCount = ([regex]::Matches($brandingManifest, [regex]::Escape($iconMarker))).Count
 if ($iconCount -ne 1) { throw "Standalone launcher icon anchor count is $iconCount; expected 1." }
 $roundIconCount = ([regex]::Matches($brandingManifest, [regex]::Escape($roundIconMarker))).Count
 if ($roundIconCount -ne 1) { throw "Standalone round launcher icon anchor count is $roundIconCount; expected 1." }
+$labelCount = ([regex]::Matches($brandingManifest, [regex]::Escape($labelMarker))).Count
+if ($labelCount -ne 1) { throw "Standalone application label anchor count is $labelCount; expected 1." }
 
 $brandingManifest = $brandingManifest.Replace($iconMarker, $managedIcon)
 $brandingManifest = $brandingManifest.Replace($roundIconMarker, $managedRoundIcon)
+$brandingManifest = $brandingManifest.Replace($labelMarker, $managedLabel)
 Set-Content -Path $brandingManifestGenerated -Value $brandingManifest -NoNewline
 
 $buildPath = Join-Path $telegram 'TMessagesProj_AppStandalone/build.gradle'
@@ -338,6 +343,9 @@ if ($generatedManifestText -notmatch 'android:icon="@mipmap/tgwsproxy_launcher"'
 }
 if ($generatedManifestText -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launcher"') {
     throw 'Generated standalone manifest does not use the TgWsProxy round launcher icon.'
+}
+if ($generatedManifestText -notmatch 'android:label="Telegram-WSP"') {
+    throw 'Generated standalone manifest does not use the Telegram-WSP application label.'
 }
 
 & git -C $telegram diff --check
