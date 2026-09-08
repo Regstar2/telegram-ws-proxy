@@ -7,7 +7,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$telegram = [System.IO.Path]::GetFullPath((Join-Path $root $TelegramPath))
+$telegram = if ([System.IO.Path]::IsPathRooted($TelegramPath)) {
+    [System.IO.Path]::GetFullPath($TelegramPath)
+} else {
+    [System.IO.Path]::GetFullPath((Join-Path $root $TelegramPath))
+}
 $gitDir = Join-Path $telegram '.git'
 
 if (-not (Test-Path $gitDir)) {
