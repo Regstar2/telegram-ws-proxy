@@ -103,6 +103,69 @@ Write-Host ('theme=' + $(if ($null -eq $theme -or $theme -eq '') { '<default>' }
 Write-Host ('nighttheme=' + $(if ($null -eq $nightTheme -or $nightTheme -eq '') { '<default Dark Blue>' } else { $nightTheme }))
 
 Write-Host ''
+Write-Host '=== Telegram Dark Blue asset ==='
+$darkBlueOutput = & adb shell run-as $Package cat files/darkblue.attheme 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'darkblueAsset=unavailable'
+} else {
+    $darkBlueText = ($darkBlueOutput -join [Environment]::NewLine)
+    foreach ($themeKey in @(
+        'windowBackgroundWhite',
+        'windowBackgroundWhiteBlackText',
+        'windowBackgroundWhiteGrayText',
+        'windowBackgroundWhiteBlueText4'
+    )) {
+        if ($darkBlueText -match ('(?m)^' + [regex]::Escape($themeKey) + '=(?<v>-?\d+)\s*$runtimeLog = & adb logcat -d -v brief "TelegramWSPTheme:I" "*:S" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'runtimeThemeLog=unavailable'
+} else {
+    $runtimeLines = @(
+        $runtimeLog |
+            Where-Object { $_ -match 'TelegramWSPTheme' } |
+            Select-Object -Last 10
+    )
+    if ($runtimeLines.Count -eq 0) {
+        Write-Host 'runtimeThemeLog=<missing>'
+        Write-Host 'Install the latest diagnostic prototype, relaunch it, wait 8 seconds, and run this script again.'
+    } else {
+        $runtimeLines | ForEach-Object { Write-Host $_ }
+    }
+}
+
+Write-Host ''
+Write-Host '=== Interpretation ==='
+Write-Host 'AUTO_NIGHT_TYPE constants: NONE=0, SCHEDULED=1, AUTOMATIC=2, SYSTEM=3.'
+Write-Host 'For the system-dark acceptance case we expect:'
+Write-Host '  Android resourceQualifier=night'
+Write-Host '  selectedAutoNightType=3 (SYSTEM), or the preference absent so Telegram uses SYSTEM by default.'
+Write-Host 'If Android is night but Telegram stores NONE=0, the fork is intentionally staying on its day theme.'
+Write-Host 'Runtime diagnostics should show activeTheme/currentThemeDark and the actual Telegram background/text colors.'
+Write-Host 'Do not paste the full mainconfig.xml; this script prints only theme-related values and diagnostic log lines.'
+)) {
+            $raw = [int64]$Matches.v
+            $unsigned = [uint32]($raw -band 0xffffffffL)
+            Write-Host ("{0}={1} (0x{2:x8})" -f $themeKey, $raw, $unsigned)
+        } else {
+            Write-Host ($themeKey + '=<missing>')
+        }
+    }
+}
+
+Write-Host ''
+Write-Host '=== Telegram theme accent state ==='
+$themeConfigOutput = & adb shell run-as $Package cat shared_prefs/themeconfig.xml 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'themeConfig=unavailable'
+} else {
+    $themeConfigXml = ($themeConfigOutput -join [Environment]::NewLine)
+    if ($themeConfigXml -match '<int name="accent_current_darkblue\.attheme" value="(?<v>-?\d+)"\s*/>') {
+        Write-Host ('darkBlueCurrentAccentId=' + $Matches.v)
+    } else {
+        Write-Host 'darkBlueCurrentAccentId=<missing> (upstream default is 0)'
+    }
+}
+
+Write-Host ''
 Write-Host '=== Runtime Telegram theme ==='
 $runtimeLog = & adb logcat -d -v brief "TelegramWSPTheme:I" "*:S" 2>&1
 if ($LASTEXITCODE -ne 0) {
