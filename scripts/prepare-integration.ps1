@@ -62,8 +62,6 @@ if ($RebuildCore -or -not (Test-Path $coreAar)) {
     Write-Host "Reusing core AAR: $coreAar"
 }
 
-& (Join-Path $PSScriptRoot 'ensure-telegram-theme-assets-lf.ps1') -TelegramPath $telegramPath
-
 & (Join-Path $PSScriptRoot 'apply-integration.ps1')
 
 Write-Host "Prepared Telegram integration under $telegramPath"
