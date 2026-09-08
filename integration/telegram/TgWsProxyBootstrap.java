@@ -340,7 +340,7 @@ final class TgWsProxyBootstrap {
                 throw new IllegalStateException("Update APK HTTP status " + status);
             }
 
-            long declaredLength = connection.getContentLengthLong();
+            int declaredLength = connection.getContentLength();
             if (declaredLength > UPDATE_APK_LIMIT_BYTES) {
                 throw new IllegalStateException("Update APK exceeds size limit");
             }
