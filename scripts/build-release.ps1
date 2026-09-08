@@ -227,12 +227,14 @@ try {
         Remove-PathWithRetry $path
     }
 
-    $buildArgs = @('-Full', '-SkipPrepare')
-    if ($Offline) {
-        $buildArgs += '-Offline'
+    $buildParameters = @{
+        TelegramPath = $TelegramPath
+        Full = $true
+        SkipPrepare = $true
+        Offline = [bool]$Offline
     }
 
-    & (Join-Path $PSScriptRoot 'build-apk.ps1') @buildArgs
+    & (Join-Path $PSScriptRoot 'build-apk.ps1') @buildParameters
 
     $builtApk = Join-Path $telegram 'TMessagesProj_AppStandalone/build/outputs/apk/afat/standalone/app.apk'
     if (-not (Test-Path $builtApk)) {
