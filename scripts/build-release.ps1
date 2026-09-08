@@ -156,9 +156,6 @@ $releaseSigningPattern = @'
 
 $releaseSigningRegex = [regex]::new($releaseSigningPattern)
 $releaseSigningMatches = $releaseSigningRegex.Matches($build)
-if ($releaseSigningMatches.Count -ne 1) {
-    throw "Expected exactly one Telegram release signingConfig, found $($releaseSigningMatches.Count)."
-}
 
 $releaseSigningBlock = @'
         release {
@@ -177,6 +174,20 @@ $releaseSigningBlock = @'
         }
 '@
 
+$managedSigningPattern = "(?ms)release\s*\{\s*def\s+tgwsKeystore\s*=\s*System\.getenv\('TELEGRAM_WSP_KEYSTORE'\).*?keyPassword\s+tgwsPassword\s*\}"
+$managedSigningMatches = [regex]::Matches($build, $managedSigningPattern)
+
+if ($releaseSigningMatches.Count -eq 1 -and $managedSigningMatches.Count -eq 0) {
+    $build = $releaseSigningRegex.Replace($build, $releaseSigningBlock, 1)
+    Write-Host 'Release signing configuration: applied Telegram-WSP keystore.'
+}
+elseif ($releaseSigningMatches.Count -eq 0 -and $managedSigningMatches.Count -eq 1) {
+    Write-Host 'Release signing configuration: existing Telegram-WSP keystore configuration reused.'
+}
+else {
+    throw "Release signing configuration is ambiguous. Upstream blocks: $($releaseSigningMatches.Count); managed Telegram-WSP blocks: $($managedSigningMatches.Count)."
+}
+
 $securePassword = Read-Host 'Release keystore password' -AsSecureString
 $password = Convert-SecureStringToPlainText $securePassword
 if ([string]::IsNullOrEmpty($password)) {
@@ -188,7 +199,6 @@ $env:TELEGRAM_WSP_KEYSTORE_PASSWORD = $password
 $env:TELEGRAM_WSP_KEY_ALIAS = $KeyAlias
 
 try {
-    $build = $releaseSigningRegex.Replace($build, $releaseSigningBlock, 1)
     Set-Content -Path $buildGradle -Value $build -NoNewline
 
     $preparedBuild = Get-Content $buildGradle -Raw
