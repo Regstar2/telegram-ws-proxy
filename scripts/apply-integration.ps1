@@ -29,6 +29,37 @@ if ($exclude -notmatch '(?m)^\.tgwsproxy/$') {
     Add-Content -Path $excludePath -Value '.tgwsproxy/'
 }
 
+$brandingSource = Join-Path $root 'integration/branding'
+$brandingResSource = Join-Path $brandingSource 'res'
+$brandingGenerated = Join-Path $generatedDir 'branding'
+$brandingResGenerated = Join-Path $brandingGenerated 'res'
+$brandingManifestSource = Join-Path $telegram 'TMessagesProj/config/release/AndroidManifest_standalone.xml'
+$brandingManifestGenerated = Join-Path $brandingGenerated 'AndroidManifest_standalone.xml'
+
+if (-not (Test-Path $brandingResSource)) { throw "Branding resources not found: $brandingResSource" }
+if (-not (Test-Path $brandingManifestSource)) { throw "Standalone manifest not found: $brandingManifestSource" }
+
+if (Test-Path $brandingGenerated) {
+    Remove-Item -Recurse -Force $brandingGenerated
+}
+New-Item -ItemType Directory -Path $brandingResGenerated -Force | Out-Null
+Copy-Item -Path (Join-Path $brandingResSource '*') -Destination $brandingResGenerated -Recurse -Force
+
+$brandingManifest = Get-Content $brandingManifestSource -Raw
+$iconMarker = '        android:icon="@mipmap/ic_launcher_sa"'
+$roundIconMarker = '        android:roundIcon="@mipmap/ic_launcher_sa"'
+$managedIcon = '        android:icon="@mipmap/tgwsproxy_launcher"'
+$managedRoundIcon = '        android:roundIcon="@mipmap/tgwsproxy_launcher"'
+
+$iconCount = ([regex]::Matches($brandingManifest, [regex]::Escape($iconMarker))).Count
+if ($iconCount -ne 1) { throw "Standalone launcher icon anchor count is $iconCount; expected 1." }
+$roundIconCount = ([regex]::Matches($brandingManifest, [regex]::Escape($roundIconMarker))).Count
+if ($roundIconCount -ne 1) { throw "Standalone round launcher icon anchor count is $roundIconCount; expected 1." }
+
+$brandingManifest = $brandingManifest.Replace($iconMarker, $managedIcon)
+$brandingManifest = $brandingManifest.Replace($roundIconMarker, $managedRoundIcon)
+Set-Content -Path $brandingManifestGenerated -Value $brandingManifest -NoNewline
+
 $buildPath = Join-Path $telegram 'TMessagesProj_AppStandalone/build.gradle'
 $build = Get-Content $buildPath -Raw
 
@@ -92,7 +123,7 @@ $appSourceSetMarker = @'
         manifest.srcFile '../TMessagesProj/config/release/AndroidManifest_standalone.xml'
     }
 '@.TrimEnd()
-$appSourceSetBlock = @'
+$appSourceSetPrototypeBlock = @'
     sourceSets.standalone {
         manifest.srcFile '../TMessagesProj/config/release/AndroidManifest_standalone.xml'
     }
@@ -100,10 +131,26 @@ $appSourceSetBlock = @'
         manifest.srcFile '../TMessagesProj/config/release/AndroidManifest_standalone.xml'
     }
 '@.TrimEnd()
-if ($build -notmatch 'sourceSets\.prototype') {
-    $count = ([regex]::Matches($build, [regex]::Escape($appSourceSetMarker))).Count
-    if ($count -ne 1) { throw "Telegram app prototype source-set anchor count is $count; expected 1." }
-    $build = $build.Replace($appSourceSetMarker, $appSourceSetBlock)
+$appSourceSetBrandingBlock = @'
+    sourceSets.standalone {
+        manifest.srcFile '../.tgwsproxy/branding/AndroidManifest_standalone.xml'
+        res.srcDir '../.tgwsproxy/branding/res'
+    }
+    sourceSets.prototype {
+        manifest.srcFile '../.tgwsproxy/branding/AndroidManifest_standalone.xml'
+        res.srcDir '../.tgwsproxy/branding/res'
+    }
+'@.TrimEnd()
+if ($build -notmatch [regex]::Escape('../.tgwsproxy/branding/AndroidManifest_standalone.xml')) {
+    if ($build -match 'sourceSets\.prototype') {
+        $count = ([regex]::Matches($build, [regex]::Escape($appSourceSetPrototypeBlock))).Count
+        if ($count -ne 1) { throw "Telegram app existing prototype source-set anchor count is $count; expected 1." }
+        $build = $build.Replace($appSourceSetPrototypeBlock, $appSourceSetBrandingBlock)
+    } else {
+        $count = ([regex]::Matches($build, [regex]::Escape($appSourceSetMarker))).Count
+        if ($count -ne 1) { throw "Telegram app standalone source-set anchor count is $count; expected 1." }
+        $build = $build.Replace($appSourceSetMarker, $appSourceSetBrandingBlock)
+    }
 }
 
 $appAbiMarker = '                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"'
@@ -278,6 +325,20 @@ if ($loader -notmatch [regex]::Escape('TgWsProxyBootstrap.start(this);')) {
 $overlay = Join-Path $root 'integration/telegram/TgWsProxyBootstrap.java'
 $bootstrapPath = Join-Path $telegram 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java'
 Copy-Item -Force $overlay $bootstrapPath
+
+$generatedIcon = Join-Path $brandingResGenerated 'drawable-nodpi/tgwsproxy_launcher_source.png'
+$generatedLegacyAlias = Join-Path $brandingResGenerated 'values/tgwsproxy_launcher.xml'
+$generatedAdaptiveIcon = Join-Path $brandingResGenerated 'mipmap-anydpi-v26/tgwsproxy_launcher.xml'
+foreach ($brandingPath in @($generatedIcon, $generatedLegacyAlias, $generatedAdaptiveIcon, $brandingManifestGenerated)) {
+    if (-not (Test-Path $brandingPath)) { throw "Generated branding file is missing: $brandingPath" }
+}
+$generatedManifestText = Get-Content $brandingManifestGenerated -Raw
+if ($generatedManifestText -notmatch 'android:icon="@mipmap/tgwsproxy_launcher"') {
+    throw 'Generated standalone manifest does not use the TgWsProxy launcher icon.'
+}
+if ($generatedManifestText -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launcher"') {
+    throw 'Generated standalone manifest does not use the TgWsProxy round launcher icon.'
+}
 
 & git -C $telegram diff --check
 if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed after applying integration.' }
