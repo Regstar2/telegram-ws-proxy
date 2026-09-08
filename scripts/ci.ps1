@@ -114,6 +114,9 @@ if ($applyScript -notmatch '\.tgwsproxy/branding/res') {
 if ($applyScript -notmatch 'android:label="Telegram-WSP"') {
     throw 'Integration script must set the Telegram-WSP application label.'
 }
+if ($applyScript -notmatch 'force_dark_google') {
+    throw 'Integration script must disable Xiaomi MIUI/HyperOS vendor force dark.'
+}
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
 if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
@@ -178,6 +181,21 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
         throw "Prepared integration modified forbidden tgnet paths: $($tgnetChanges -join ', ')"
     }
 
+    # Telegram already opts out of Android's standard Force Dark in its startup theme.
+    # Keep this as an upstream invariant instead of patching Telegram styles.
+    $upstreamForceDarkStyles = @(
+        'TMessagesProj/src/main/res/values-v21/styles.xml',
+        'TMessagesProj/src/main/res/values-v31/styles.xml',
+        'TMessagesProj/src/main/res/values-night/styles.xml'
+    )
+    foreach ($styleRelativePath in $upstreamForceDarkStyles) {
+        $stylePath = Join-Path $telegramWorktree $styleRelativePath
+        $styleText = Get-Content $stylePath -Raw
+        if ($styleText -notmatch '<item name="android:forceDarkAllowed">false</item>') {
+            throw "Pinned Telegram no longer opts out of standard Force Dark in $styleRelativePath; re-evaluate the Xiaomi compatibility overlay."
+        }
+    }
+
     $preparedBuildVarsPath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
     $preparedBuildVars = Get-Content $preparedBuildVarsPath -Raw
     if ($preparedBuildVars -notmatch 'public static boolean SUPPORTS_PASSKEYS = false;') {
@@ -238,6 +256,13 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($generatedBrandingManifest -notmatch 'android:label="Telegram-WSP"') {
         throw 'Prepared standalone manifest does not use Telegram-WSP as the application label.'
+    }
+    if ($generatedBrandingManifest -notmatch '<meta-data android:name="force_dark_google" android:value="true" />') {
+        throw 'Prepared standalone manifest does not disable Xiaomi MIUI/HyperOS vendor force dark.'
+    }
+    $xiaomiForceDarkCount = ([regex]::Matches($generatedBrandingManifest, [regex]::Escape('<meta-data android:name="force_dark_google" android:value="true" />'))).Count
+    if ($xiaomiForceDarkCount -ne 1) {
+        throw "Prepared standalone manifest must contain exactly one Xiaomi force-dark opt-out metadata entry; found $xiaomiForceDarkCount."
     }
 
     $generatedBrandingBlob = (& git hash-object $generatedBrandingIconPath).Trim()
