@@ -2,11 +2,14 @@ package org.telegram.messenger;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 
 import org.telegram.tgnet.ConnectionsManager;
+import org.telegram.ui.ActionBar.Theme;
 
 import java.security.SecureRandom;
 import java.util.Map;
@@ -28,6 +31,7 @@ final class TgWsProxyBootstrap {
     private static final String DEFAULT_RUNTIME_CONFIG =
             "@connection_mode=cf_first,@mtproto_worker_preconnect=1";
     private static final char[] HEX = "0123456789abcdef".toCharArray();
+    private static final String THEME_DIAGNOSTIC_TAG = "TelegramWSPTheme";
 
     private static boolean initialized;
 
@@ -43,12 +47,64 @@ final class TgWsProxyBootstrap {
         }
 
         Context appContext = context.getApplicationContext();
+        scheduleThemeDiagnostics(appContext);
+
         Thread bootstrapThread = new Thread(
                 () -> startInBackground(appContext),
                 "TgWsProxyBootstrap"
         );
         bootstrapThread.setDaemon(true);
         bootstrapThread.start();
+    }
+
+    private static void scheduleThemeDiagnostics(Context appContext) {
+        Handler handler = ApplicationLoader.applicationHandler;
+        if (handler == null) {
+            handler = new Handler(Looper.getMainLooper());
+        }
+
+        final Handler mainHandler = handler;
+        final int[] delaysMs = new int[]{1500, 4000, 7000};
+        for (int delayMs : delaysMs) {
+            mainHandler.postDelayed(() -> logThemeDiagnostics(appContext, delayMs), delayMs);
+        }
+    }
+
+    private static void logThemeDiagnostics(Context appContext, int delayMs) {
+        try {
+            int uiMode = appContext.getResources().getConfiguration().uiMode;
+            boolean systemNight =
+                    (uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+
+            SharedPreferences telegramPrefs =
+                    appContext.getSharedPreferences("mainconfig", Context.MODE_PRIVATE);
+            boolean storedAutoNight = telegramPrefs.contains("selectedAutoNightType");
+            int storedAutoNightType =
+                    telegramPrefs.getInt("selectedAutoNightType", Theme.AUTO_NIGHT_TYPE_SYSTEM);
+
+            String activeTheme = Theme.getActiveTheme() == null
+                    ? "<null>"
+                    : Theme.getActiveTheme().getKey();
+
+            int background = Theme.getColor(Theme.key_windowBackgroundWhite);
+            int blackText = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+
+            Log.i(
+                    THEME_DIAGNOSTIC_TAG,
+                    "delayMs=" + delayMs
+                            + " systemNight=" + systemNight
+                            + " runtimeAutoNightType=" + Theme.selectedAutoNightType
+                            + " storedAutoNightPresent=" + storedAutoNight
+                            + " storedAutoNightType=" + storedAutoNightType
+                            + " activeTheme=" + activeTheme
+                            + " currentThemeNight=" + Theme.isCurrentThemeNight()
+                            + " currentThemeDark=" + Theme.isCurrentThemeDark()
+                            + " windowBackgroundWhite=0x" + Integer.toHexString(background)
+                            + " windowBackgroundWhiteBlackText=0x" + Integer.toHexString(blackText)
+            );
+        } catch (Throwable error) {
+            Log.e(THEME_DIAGNOSTIC_TAG, "Theme diagnostics failed", error);
+        }
     }
 
     private static void startInBackground(Context appContext) {
