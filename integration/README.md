@@ -59,6 +59,27 @@ Bootstrap генерирует локальный 16-byte MTProto secret при 
 
 `.tgwsproxy/` исключается только локально через `.git/info/exclude` и не является частью upstream source diff.
 
+## Launcher branding
+
+Launcher artwork хранится в integration layer и воспроизводимо добавляется в generated overlay:
+
+```text
+integration/branding/res/drawable-nodpi/tgwsproxy_launcher_source.png
+integration/branding/res/values/tgwsproxy_launcher.xml
+integration/branding/res/mipmap-anydpi-v26/tgwsproxy_launcher.xml
+```
+
+Исходный PNG скопирован byte-for-byte из `Regstar2/tg-ws-proxy-android/icon.png`; provenance и исходный Git blob SHA зафиксированы в `integration/branding/README.md`.
+
+При применении overlay скрипт:
+
+1. копирует branding resources в `.tgwsproxy/branding/res`;
+2. создаёт generated standalone manifest на основе pinned Telegram manifest;
+3. заменяет только default `android:icon` / `android:roundIcon` на `@mipmap/tgwsproxy_launcher`;
+4. подключает generated manifest/resources через уже изменяемый `TMessagesProj_AppStandalone/build.gradle`.
+
+Для API < 26 используется legacy mipmap alias. Для API 26+ используется adaptive icon resource. Дополнительные Telegram resource-файлы не попадают в upstream source diff, поэтому лимит **5 upstream-файлов** сохраняется.
+
 ## Telegram API credentials
 
 Для локального device smoke-test можно использовать собственные `api_id` / `api_hash` без изменения tracked-файлов.
