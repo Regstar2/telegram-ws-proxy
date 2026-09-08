@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $script:AdbPath = (Get-Command adb -CommandType Application -ErrorAction Stop).Path
 
 function Invoke-AdbCapture {
-    param([string[]]$Args)
+    param([string[]]$AdbArguments)
 
     $previousErrorActionPreference = $ErrorActionPreference
     try {
@@ -18,7 +18,7 @@ function Invoke-AdbCapture {
         # to stderr even when it exits successfully, so capture first and judge by
         # the native exit code instead.
         $ErrorActionPreference = 'Continue'
-        $rawOutput = @(& $script:AdbPath @Args 2>&1)
+        $rawOutput = @(& $script:AdbPath @AdbArguments 2>&1)
         $exitCode = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
@@ -40,11 +40,11 @@ function Invoke-AdbCapture {
 }
 
 function Invoke-Adb {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$AdbArguments)
 
-    $result = Invoke-AdbCapture -Args $Args
+    $result = Invoke-AdbCapture -AdbArguments $AdbArguments
     if ($result.ExitCode -ne 0) {
-        throw "adb $($Args -join ' ') failed:`n$($result.RawOutput -join [Environment]::NewLine)"
+        throw "adb $($AdbArguments -join ' ') failed:`n$($result.RawOutput -join [Environment]::NewLine)"
     }
 
     return @($result.Output)
@@ -56,7 +56,7 @@ function Get-Prop {
     return ((Invoke-Adb shell getprop $Name) -join '').Trim()
 }
 
-$startServer = Invoke-AdbCapture -Args @('start-server')
+$startServer = Invoke-AdbCapture -AdbArguments @('start-server')
 if ($startServer.ExitCode -ne 0) {
     throw "adb start-server failed:`n$($startServer.RawOutput -join [Environment]::NewLine)"
 }
@@ -112,7 +112,7 @@ if ($versionCode) {
 
 Write-Host ''
 Write-Host '=== Telegram theme preferences ==='
-$prefResult = Invoke-AdbCapture -Args @(
+$prefResult = Invoke-AdbCapture -AdbArguments @(
     'shell', 'run-as', $Package, 'cat', 'shared_prefs/mainconfig.xml'
 )
 if ($prefResult.ExitCode -ne 0) {
@@ -165,7 +165,7 @@ if ($null -eq $nightTheme -or $nightTheme -eq '') {
 
 Write-Host ''
 Write-Host '=== Telegram Dark Blue asset ==='
-$darkBlueResult = Invoke-AdbCapture -Args @(
+$darkBlueResult = Invoke-AdbCapture -AdbArguments @(
     'shell', 'run-as', $Package, 'cat', 'files/darkblue.attheme'
 )
 if ($darkBlueResult.ExitCode -ne 0) {
@@ -193,7 +193,7 @@ if ($darkBlueResult.ExitCode -ne 0) {
 
 Write-Host ''
 Write-Host '=== Telegram theme accent state ==='
-$themeConfigResult = Invoke-AdbCapture -Args @(
+$themeConfigResult = Invoke-AdbCapture -AdbArguments @(
     'shell', 'run-as', $Package, 'cat', 'shared_prefs/themeconfig.xml'
 )
 if ($themeConfigResult.ExitCode -ne 0) {
@@ -210,7 +210,7 @@ if ($themeConfigResult.ExitCode -ne 0) {
 
 Write-Host ''
 Write-Host '=== Runtime Telegram theme ==='
-$runtimeResult = Invoke-AdbCapture -Args @(
+$runtimeResult = Invoke-AdbCapture -AdbArguments @(
     'logcat', '-d', '-v', 'brief', 'TelegramWSPTheme:I', '*:S'
 )
 if ($runtimeResult.ExitCode -ne 0) {
