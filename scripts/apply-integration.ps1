@@ -29,6 +29,9 @@ if ($exclude -notmatch '(?m)^\.tgwsproxy/$') {
     Add-Content -Path $excludePath -Value '.tgwsproxy/'
 }
 
+& (Join-Path $PSScriptRoot 'ensure-telegram-theme-assets-lf.ps1') -TelegramPath $telegram
+$themeAssetsGenerated = Join-Path $generatedDir 'theme-assets'
+
 $brandingSource = Join-Path $root 'integration/branding'
 $brandingResSource = Join-Path $brandingSource 'res'
 $brandingGenerated = Join-Path $generatedDir 'branding'
@@ -281,6 +284,19 @@ if ($coreBuild -notmatch '(?m)^        prototype \{') {
     $coreBuild = $coreBuild.Replace($coreStandaloneMarker, $corePrototypeBlock)
 }
 
+$coreThemeAssetMarker = "    namespace 'org.telegram.messenger'"
+$coreThemeAssetBlock = @'
+    sourceSets.standalone.assets.srcDir '../.tgwsproxy/theme-assets'
+    sourceSets.prototype.assets.srcDir '../.tgwsproxy/theme-assets'
+
+    namespace 'org.telegram.messenger'
+'@.TrimEnd()
+if ($coreBuild -notmatch [regex]::Escape('../.tgwsproxy/theme-assets')) {
+    $count = ([regex]::Matches($coreBuild, [regex]::Escape($coreThemeAssetMarker))).Count
+    if ($count -ne 1) { throw "Telegram core namespace anchor count is $count; expected 1." }
+    $coreBuild = $coreBuild.Replace($coreThemeAssetMarker, $coreThemeAssetBlock)
+}
+
 Set-Content -Path $coreBuildPath -Value $coreBuild -NoNewline
 
 $buildVarsPath = Join-Path $telegram 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
@@ -330,6 +346,17 @@ if ($loader -notmatch [regex]::Escape('TgWsProxyBootstrap.start(this);')) {
 $overlay = Join-Path $root 'integration/telegram/TgWsProxyBootstrap.java'
 $bootstrapPath = Join-Path $telegram 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java'
 Copy-Item -Force $overlay $bootstrapPath
+
+$generatedThemeAssets = @(Get-ChildItem $themeAssetsGenerated -File -Filter '*.attheme')
+if ($generatedThemeAssets.Count -eq 0) {
+    throw 'Generated LF Telegram theme asset overlay is missing.'
+}
+foreach ($themeAsset in $generatedThemeAssets) {
+    $themeBytes = [System.IO.File]::ReadAllBytes($themeAsset.FullName)
+    if ($themeBytes -contains [byte]13) {
+        throw "Generated Telegram theme overlay contains CR bytes: $($themeAsset.Name)"
+    }
+}
 
 $generatedIcon = Join-Path $brandingResGenerated 'drawable-nodpi/tgwsproxy_launcher_source.png'
 $generatedLegacyAlias = Join-Path $brandingResGenerated 'values/tgwsproxy_launcher.xml'
