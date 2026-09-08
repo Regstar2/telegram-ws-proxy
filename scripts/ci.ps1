@@ -111,6 +111,9 @@ if ($applyScript -notmatch '\.tgwsproxy/branding/AndroidManifest_standalone\.xml
 if ($applyScript -notmatch '\.tgwsproxy/branding/res') {
     throw 'Integration script must attach generated branding resources to the app source sets.'
 }
+if ($applyScript -notmatch 'android:label="Telegram-WSP"') {
+    throw 'Integration script must set the Telegram-WSP application label.'
+}
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
 if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
@@ -232,6 +235,9 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     }
     if ($generatedBrandingManifest -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launcher"') {
         throw 'Prepared standalone manifest does not use TgWsProxy as the round launcher icon.'
+    }
+    if ($generatedBrandingManifest -notmatch 'android:label="Telegram-WSP"') {
+        throw 'Prepared standalone manifest does not use Telegram-WSP as the application label.'
     }
 
     $generatedBrandingBlob = (& git hash-object $generatedBrandingIconPath).Trim()
