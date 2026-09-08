@@ -52,6 +52,11 @@ $labelMarker = '        android:label="@string/AppName"'
 $managedIcon = '        android:icon="@mipmap/tgwsproxy_launcher"'
 $managedRoundIcon = '        android:roundIcon="@mipmap/tgwsproxy_launcher"'
 $managedLabel = '        android:label="Telegram-WSP"'
+$applicationTagEndMarker = '        tools:replace="android:supportsRtl">'
+$xiaomiForceDarkMetadata = @'
+        <!-- Xiaomi MIUI/HyperOS: disable vendor global force-dark inversion for this fork package. -->
+        <meta-data android:name="force_dark_google" android:value="true" />
+'@.TrimEnd()
 
 $iconCount = ([regex]::Matches($brandingManifest, [regex]::Escape($iconMarker))).Count
 if ($iconCount -ne 1) { throw "Standalone launcher icon anchor count is $iconCount; expected 1." }
@@ -59,10 +64,14 @@ $roundIconCount = ([regex]::Matches($brandingManifest, [regex]::Escape($roundIco
 if ($roundIconCount -ne 1) { throw "Standalone round launcher icon anchor count is $roundIconCount; expected 1." }
 $labelCount = ([regex]::Matches($brandingManifest, [regex]::Escape($labelMarker))).Count
 if ($labelCount -ne 1) { throw "Standalone application label anchor count is $labelCount; expected 1." }
+$applicationTagEndCount = ([regex]::Matches($brandingManifest, [regex]::Escape($applicationTagEndMarker))).Count
+if ($applicationTagEndCount -ne 1) { throw "Standalone application tag-end anchor count is $applicationTagEndCount; expected 1." }
 
 $brandingManifest = $brandingManifest.Replace($iconMarker, $managedIcon)
 $brandingManifest = $brandingManifest.Replace($roundIconMarker, $managedRoundIcon)
 $brandingManifest = $brandingManifest.Replace($labelMarker, $managedLabel)
+$applicationTagEndBlock = $applicationTagEndMarker + [Environment]::NewLine + [Environment]::NewLine + $xiaomiForceDarkMetadata
+$brandingManifest = $brandingManifest.Replace($applicationTagEndMarker, $applicationTagEndBlock)
 Set-Content -Path $brandingManifestGenerated -Value $brandingManifest -NoNewline
 
 $buildPath = Join-Path $telegram 'TMessagesProj_AppStandalone/build.gradle'
@@ -346,6 +355,9 @@ if ($generatedManifestText -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launc
 }
 if ($generatedManifestText -notmatch 'android:label="Telegram-WSP"') {
     throw 'Generated standalone manifest does not use the Telegram-WSP application label.'
+}
+if ($generatedManifestText -notmatch '<meta-data android:name="force_dark_google" android:value="true" />') {
+    throw 'Generated standalone manifest does not disable Xiaomi MIUI/HyperOS vendor force dark.'
 }
 
 & git -C $telegram diff --check
