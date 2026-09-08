@@ -6,20 +6,59 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$script:AdbPath = (Get-Command adb -CommandType Application -ErrorAction Stop).Path
+
+function Invoke-AdbCapture {
+    param([string[]]$Args)
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 can surface native stderr as NativeCommandError when
+        # ErrorActionPreference=Stop. ADB legitimately writes daemon startup messages
+        # to stderr even when it exits successfully, so capture first and judge by
+        # the native exit code instead.
+        $ErrorActionPreference = 'Continue'
+        $rawOutput = @(& $script:AdbPath @Args 2>&1)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    $output = @(
+        $rawOutput | Where-Object {
+            $line = [string]$_
+            $line -notmatch '^\* daemon not running; starting now at tcp:\d+$' -and
+            $line -notmatch '^\* daemon started successfully$'
+        }
+    )
+
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        Output = $output
+        RawOutput = $rawOutput
+    }
+}
+
 function Invoke-Adb {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
 
-    $output = & adb @Args 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "adb $($Args -join ' ') failed:`n$($output -join [Environment]::NewLine)"
+    $result = Invoke-AdbCapture -Args $Args
+    if ($result.ExitCode -ne 0) {
+        throw "adb $($Args -join ' ') failed:`n$($result.RawOutput -join [Environment]::NewLine)"
     }
-    return @($output)
+
+    return @($result.Output)
 }
 
 function Get-Prop {
     param([string]$Name)
 
     return ((Invoke-Adb shell getprop $Name) -join '').Trim()
+}
+
+$startServer = Invoke-AdbCapture -Args @('start-server')
+if ($startServer.ExitCode -ne 0) {
+    throw "adb start-server failed:`n$($startServer.RawOutput -join [Environment]::NewLine)"
 }
 
 $state = ((Invoke-Adb get-state) -join '').Trim()
@@ -73,14 +112,16 @@ if ($versionCode) {
 
 Write-Host ''
 Write-Host '=== Telegram theme preferences ==='
-$prefOutput = & adb shell run-as $Package cat shared_prefs/mainconfig.xml 2>&1
-if ($LASTEXITCODE -ne 0) {
+$prefResult = Invoke-AdbCapture -Args @(
+    'shell', 'run-as', $Package, 'cat', 'shared_prefs/mainconfig.xml'
+)
+if ($prefResult.ExitCode -ne 0) {
     Write-Host 'runAs=unavailable'
     Write-Host 'Build/install the debuggable afatPrototype variant and run this script again.'
     exit 2
 }
 
-$xml = ($prefOutput -join [Environment]::NewLine)
+$xml = ($prefResult.Output -join [Environment]::NewLine)
 
 $selectedAutoNightType = $null
 if ($xml -match '<int name="selectedAutoNightType" value="(?<v>\d+)"\s*/>') {
@@ -124,11 +165,13 @@ if ($null -eq $nightTheme -or $nightTheme -eq '') {
 
 Write-Host ''
 Write-Host '=== Telegram Dark Blue asset ==='
-$darkBlueOutput = & adb shell run-as $Package cat files/darkblue.attheme 2>&1
-if ($LASTEXITCODE -ne 0) {
+$darkBlueResult = Invoke-AdbCapture -Args @(
+    'shell', 'run-as', $Package, 'cat', 'files/darkblue.attheme'
+)
+if ($darkBlueResult.ExitCode -ne 0) {
     Write-Host 'darkblueAsset=unavailable'
 } else {
-    $darkBlueText = ($darkBlueOutput -join [Environment]::NewLine)
+    $darkBlueText = ($darkBlueResult.Output -join [Environment]::NewLine)
     $themeKeys = @(
         'windowBackgroundWhite',
         'windowBackgroundWhiteBlackText',
@@ -150,11 +193,13 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ''
 Write-Host '=== Telegram theme accent state ==='
-$themeConfigOutput = & adb shell run-as $Package cat shared_prefs/themeconfig.xml 2>&1
-if ($LASTEXITCODE -ne 0) {
+$themeConfigResult = Invoke-AdbCapture -Args @(
+    'shell', 'run-as', $Package, 'cat', 'shared_prefs/themeconfig.xml'
+)
+if ($themeConfigResult.ExitCode -ne 0) {
     Write-Host 'themeConfig=unavailable'
 } else {
-    $themeConfigXml = ($themeConfigOutput -join [Environment]::NewLine)
+    $themeConfigXml = ($themeConfigResult.Output -join [Environment]::NewLine)
     $accentPattern = '<int name="accent_current_darkblue\.attheme" value="(?<v>-?\d+)"\s*/>'
     if ($themeConfigXml -match $accentPattern) {
         Write-Host ('darkBlueCurrentAccentId=' + $Matches.v)
@@ -165,12 +210,14 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ''
 Write-Host '=== Runtime Telegram theme ==='
-$runtimeLog = & adb logcat -d -v brief 'TelegramWSPTheme:I' '*:S' 2>&1
-if ($LASTEXITCODE -ne 0) {
+$runtimeResult = Invoke-AdbCapture -Args @(
+    'logcat', '-d', '-v', 'brief', 'TelegramWSPTheme:I', '*:S'
+)
+if ($runtimeResult.ExitCode -ne 0) {
     Write-Host 'runtimeThemeLog=unavailable'
 } else {
     $runtimeLines = @(
-        $runtimeLog |
+        $runtimeResult.Output |
             Where-Object { $_ -match 'TelegramWSPTheme' } |
             Select-Object -Last 10
     )
