@@ -36,62 +36,14 @@ $brandingResGenerated = Join-Path $brandingGenerated 'res'
 $brandingManifestSource = Join-Path $telegram 'TMessagesProj/config/release/AndroidManifest_standalone.xml'
 $brandingManifestGenerated = Join-Path $brandingGenerated 'AndroidManifest_standalone.xml'
 
-$nightThemeSources = @(
-    @{
-        source = Join-Path $telegram 'TMessagesProj/src/main/res/values-v21/styles.xml'
-        destination = Join-Path $brandingResGenerated 'values-night-v21/tgwsproxy_theme.xml'
-    },
-    @{
-        source = Join-Path $telegram 'TMessagesProj/src/main/res/values-v31/styles.xml'
-        destination = Join-Path $brandingResGenerated 'values-night-v31/tgwsproxy_theme.xml'
-    }
-)
-
 if (-not (Test-Path $brandingResSource)) { throw "Branding resources not found: $brandingResSource" }
 if (-not (Test-Path $brandingManifestSource)) { throw "Standalone manifest not found: $brandingManifestSource" }
-foreach ($nightThemeSource in $nightThemeSources) {
-    if (-not (Test-Path $nightThemeSource.source)) {
-        throw "Telegram night-theme source not found: $($nightThemeSource.source)"
-    }
-}
 
 if (Test-Path $brandingGenerated) {
     Remove-Item -Recurse -Force $brandingGenerated
 }
 New-Item -ItemType Directory -Path $brandingResGenerated -Force | Out-Null
 Copy-Item -Path (Join-Path $brandingResSource '*') -Destination $brandingResGenerated -Recurse -Force
-
-foreach ($nightThemeSource in $nightThemeSources) {
-    $sourceText = Get-Content $nightThemeSource.source -Raw
-    $styleMatch = [regex]::Match(
-        $sourceText,
-        '(?s)<style name="Theme\.TMessages" parent="Theme\.AppCompat\.Light">.*?</style>'
-    )
-    if (-not $styleMatch.Success) {
-        throw "Theme.TMessages Light style not found in $($nightThemeSource.source)"
-    }
-
-    $nightStyle = $styleMatch.Value.Replace(
-        'parent="Theme.AppCompat.Light"',
-        'parent="Theme.AppCompat.DayNight"'
-    )
-
-    $nightThemeDir = Split-Path -Parent $nightThemeSource.destination
-    New-Item -ItemType Directory -Path $nightThemeDir -Force | Out-Null
-    $nightThemeXml = '<?xml version="1.0" encoding="utf-8"?>' +
-        [Environment]::NewLine +
-        '<resources>' +
-        [Environment]::NewLine +
-        $nightStyle +
-        [Environment]::NewLine +
-        '</resources>' +
-        [Environment]::NewLine
-    [System.IO.File]::WriteAllText(
-        $nightThemeSource.destination,
-        $nightThemeXml,
-        [System.Text.UTF8Encoding]::new($false)
-    )
-}
 
 $brandingManifest = Get-Content $brandingManifestSource -Raw
 $iconMarker = '        android:icon="@mipmap/ic_launcher_sa"'
@@ -205,6 +157,7 @@ if ($build -notmatch [regex]::Escape('../.tgwsproxy/branding/AndroidManifest_sta
         $build = $build.Replace($appSourceSetMarker, $appSourceSetBrandingBlock)
     }
 }
+
 $appAbiMarker = '                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"'
 $appAbiBlock = @'
                 if (project.findProperty("TGWS_PROXY_ARM64_ONLY")?.toBoolean()) {
@@ -377,16 +330,6 @@ if ($loader -notmatch [regex]::Escape('TgWsProxyBootstrap.start(this);')) {
 $overlay = Join-Path $root 'integration/telegram/TgWsProxyBootstrap.java'
 $bootstrapPath = Join-Path $telegram 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java'
 Copy-Item -Force $overlay $bootstrapPath
-
-foreach ($nightThemeSource in $nightThemeSources) {
-    if (-not (Test-Path $nightThemeSource.destination)) {
-        throw "Generated Telegram-WSP night theme is missing: $($nightThemeSource.destination)"
-    }
-    $nightThemeText = Get-Content $nightThemeSource.destination -Raw
-    if ($nightThemeText -notmatch '<style name="Theme\.TMessages" parent="Theme\.AppCompat\.DayNight">') {
-        throw "Generated Telegram-WSP night theme is not DayNight: $($nightThemeSource.destination)"
-    }
-}
 
 $generatedIcon = Join-Path $brandingResGenerated 'drawable-nodpi/tgwsproxy_launcher_source.png'
 $generatedLegacyAlias = Join-Path $brandingResGenerated 'values/tgwsproxy_launcher.xml'
