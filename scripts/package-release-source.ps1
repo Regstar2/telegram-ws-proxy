@@ -27,7 +27,7 @@ function Assert-Head {
 
     $actual = (& git -C $RepositoryPath rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $actual -ne $Expected) {
-        throw "Unexpected checkout HEAD at $RepositoryPath: $actual != $Expected"
+        throw "Unexpected checkout HEAD at ${RepositoryPath}: $actual != $Expected"
     }
 }
 
