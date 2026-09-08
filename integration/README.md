@@ -150,6 +150,24 @@ TELEGRAM_API_HASH=<your-api-hash>
 
 `afatDebug` не используется: соответствующий library build включает `DEBUG_VERSION=true` и `DEBUG_PRIVATE_VERSION=true`.
 
+## Release signing
+
+Постоянный release key создаётся один раз:
+
+```powershell
+./scripts/create-release-keystore.ps1
+```
+
+По умолчанию ключ хранится только локально в `.signing/telegram-wsp-release.p12`. Каталог `.signing/` и `*.p12` исключены из Git; потеря или замена ключа ломает update compatibility для уже установленного package `org.telegram.messenger.web`.
+
+Full signed release:
+
+```powershell
+./scripts/build-release.ps1
+```
+
+Скрипт выполняет deterministic prepare, берёт Telegram API credentials из environment или `.work/telegram/local.properties`, временно подключает собственный keystore только в generated Telegram worktree, собирает `afatStandalone` с R8/всеми ABI, проверяет package/label через `aapt`, подпись через `apksigner verify`, сохраняет `dist/Telegram-WSP-release.apk` и печатает SHA-256. Signing password удаляется из process environment в `finally`.
+
 ## Правила
 
 - reusable runtime не зависит от Telegram;

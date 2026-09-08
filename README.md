@@ -86,6 +86,8 @@ scripts/
   apply-integration.ps1  применение deterministic overlay
   prepare-integration.ps1 полный fetch → build → apply
   build-apk.ps1          fast ARM64 prototype; -Full для afatStandalone
+  create-release-keystore.ps1  одноразовое создание собственного release key
+  build-release.ps1       signed afatStandalone + metadata/signature verification
   ci.ps1                 проверки репозитория
 ```
 
@@ -96,7 +98,7 @@ scripts/
 Для базовых проверок требуется Git и PowerShell 7+. Для полной подготовки интеграции нужны JDK 17, Go 1.25, Android SDK/NDK и Gradle 8.2.1.
 
 ```powershell
-git clone https://github.com/Regstar2/telegram-ws-proxy.git
+git clone https://github.com/Regstar2/telegram-wsp.git
 cd telegram-ws-proxy
 
 ./scripts/prepare-integration.ps1 -Force
@@ -110,6 +112,20 @@ cd telegram-ws-proxy
 ```
 
 После `prepare-integration.ps1` чистый pinned Telegram получает reproducible overlay и локально собранный `tgwsproxy-core` AAR. `./scripts/build-apk.ps1` по умолчанию собирает быстрый ARM64 `afatPrototype` без R8, а `./scripts/build-apk.ps1 -Full` — полный `afatStandalone` для финального acceptance.
+
+Для собственной release-подписи ключ создаётся один раз:
+
+```powershell
+./scripts/create-release-keystore.ps1
+```
+
+После этого full release-сборка выполняется одной командой:
+
+```powershell
+./scripts/build-release.ps1
+```
+
+Скрипт использует pinned Telegram, проверяет branding `Telegram-WSP`, package `org.telegram.messenger.web` и APK-подпись, затем сохраняет результат в `dist/Telegram-WSP-release.apk`. Файл `.signing/telegram-wsp-release.p12` и его пароль нужно сохранить для всех будущих обновлений и никогда не коммитить.
 
 Для локальной сборки с собственными Telegram `api_id` / `api_hash` используйте переменные `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` либо локальный `.work/telegram/local.properties`; значения не должны попадать в Git. Подробности: [integration/README.md](integration/README.md).
 
