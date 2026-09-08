@@ -291,6 +291,18 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     if ($preparedBootstrap -notmatch 'Theme\.isCurrentThemeDark\(\)') {
         throw 'Diagnostic branch must report whether the active Telegram theme is dark.'
     }
+    if ($preparedBootstrap -notmatch 'Theme\.isAnimatingColor\(\)') {
+        throw 'Diagnostic branch must report whether Telegram theme animation is active.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getNonAnimatedColor\(') {
+        throw 'Diagnostic branch must report the non-animated Telegram theme color.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getCurrentColor\(') {
+        throw 'Diagnostic branch must report the currentColors value.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.hasThemeKey\(') {
+        throw 'Diagnostic branch must report whether currentColors contains the theme key.'
+    }
     if ($preparedBootstrap -notmatch 'key_windowBackgroundWhiteBlackText') {
         throw 'Diagnostic branch must report the intro text color key.'
     }
