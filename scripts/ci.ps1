@@ -30,7 +30,8 @@ $required = @(
     'scripts/apply-integration.ps1',
     'scripts/prepare-integration.ps1',
     'scripts/build-apk.ps1',
-    'scripts/diagnose-xiaomi-dark-mode.ps1'
+    'scripts/diagnose-xiaomi-dark-mode.ps1',
+    'scripts/ensure-telegram-theme-assets-lf.ps1'
 )
 
 foreach ($path in $required) {
@@ -70,6 +71,17 @@ if ($diagnosticScript -notmatch '\$AdbArguments' -or $diagnosticScript -notmatch
     throw 'diagnose-xiaomi-dark-mode.ps1 must use an explicit ADB argument array for native invocation.'
 }
 
+$themeLfScript = Get-Content (Join-Path $root 'scripts/ensure-telegram-theme-assets-lf.ps1') -Raw
+if ($themeLfScript -notmatch '\*\.attheme text eol=lf') {
+    throw 'Theme asset normalization must force LF through Git attributes.'
+}
+if ($themeLfScript -notmatch 'ReadAllBytes') {
+    throw 'Theme asset normalization must verify raw line-ending bytes.'
+}
+if ($themeLfScript -notmatch 'checkout HEAD -- \$asset') {
+    throw 'Theme asset normalization must restore affected assets from the pinned Git blob.'
+}
+
 $buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
 if ($buildApkScript -notmatch 'assembleAfatPrototype') {
     throw 'scripts/build-apk.ps1 must default to the fast afatPrototype variant.'
@@ -103,6 +115,9 @@ if ($buildApkScript -notmatch '--parallel') {
 }
 if ($buildApkScript -notmatch '\[switch\]\$Offline') {
     throw 'scripts/build-apk.ps1 must expose offline repeat builds.'
+}
+if ($buildApkScript -notmatch 'ensure-telegram-theme-assets-lf\.ps1') {
+    throw 'scripts/build-apk.ps1 must enforce LF Telegram theme assets before Gradle.'
 }
 
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
