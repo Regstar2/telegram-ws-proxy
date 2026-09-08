@@ -24,7 +24,9 @@ final class TgWsProxyBootstrap {
     private static final String KEY_MANAGED_PROXY = "managed_proxy";
     private static final String HOST = "127.0.0.1";
     private static final int PORT = 1443;
-    private static final String DEFAULT_RUNTIME_CONFIG = "@mtproto_worker_preconnect=1";
+    private static final String LEGACY_RUNTIME_CONFIG = "@mtproto_worker_preconnect=1";
+    private static final String DEFAULT_RUNTIME_CONFIG =
+            "@connection_mode=cf_first,@mtproto_worker_preconnect=1";
     private static final char[] HEX = "0123456789abcdef".toCharArray();
 
     private static boolean initialized;
@@ -59,8 +61,9 @@ final class TgWsProxyBootstrap {
 
             String secret = getOrCreateSecret(integrationPrefs);
             String runtimeConfig = integrationPrefs.getString(KEY_RUNTIME_CONFIG, DEFAULT_RUNTIME_CONFIG);
-            if (runtimeConfig == null) {
+            if (runtimeConfig == null || LEGACY_RUNTIME_CONFIG.equals(runtimeConfig.trim())) {
                 runtimeConfig = DEFAULT_RUNTIME_CONFIG;
+                integrationPrefs.edit().putString(KEY_RUNTIME_CONFIG, runtimeConfig).apply();
             }
 
             TgWsProxyConfig config = new TgWsProxyConfig(HOST, PORT, secret, runtimeConfig, BuildVars.LOGS_ENABLED);

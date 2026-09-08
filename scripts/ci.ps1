@@ -19,18 +19,100 @@ $required = @(
     'docs/product/mvp-scope.md',
     'integration/README.md',
     'integration/telegram/TgWsProxyBootstrap.java',
+    'integration/branding/README.md',
+    'integration/branding/res/drawable-nodpi/tgwsproxy_launcher_source.png',
+    'integration/branding/res/values/tgwsproxy_launcher.xml',
+    'integration/branding/res/mipmap-anydpi-v26/tgwsproxy_launcher.xml',
     'patches/README.md',
     'scripts/fetch-upstream.ps1',
     'scripts/fetch-core.ps1',
     'scripts/build-core.ps1',
     'scripts/apply-integration.ps1',
-    'scripts/prepare-integration.ps1'
+    'scripts/prepare-integration.ps1',
+    'scripts/build-apk.ps1'
 )
 
 foreach ($path in $required) {
     if (-not (Test-Path (Join-Path $root $path))) {
         throw "Required project file is missing: $path"
     }
+}
+
+$buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
+if ($buildApkScript -notmatch 'assembleAfatPrototype') {
+    throw 'scripts/build-apk.ps1 must default to the fast afatPrototype variant.'
+}
+if ($buildApkScript -notmatch 'assembleAfatStandalone') {
+    throw 'scripts/build-apk.ps1 must preserve the full afatStandalone variant.'
+}
+if ($buildApkScript -notmatch '\[switch\]\$Full') {
+    throw 'scripts/build-apk.ps1 must expose the -Full standalone build switch.'
+}
+if ($buildApkScript -notmatch '--build-cache') {
+    throw 'scripts/build-apk.ps1 must enable the Gradle build cache.'
+}
+if ($buildApkScript -notmatch '--daemon') {
+    throw 'scripts/build-apk.ps1 must keep the Gradle daemon enabled for iterative builds.'
+}
+if ($buildApkScript -notmatch 'TGWS_PROXY_ARM64_ONLY=true') {
+    throw 'scripts/build-apk.ps1 must restrict fast prototype builds to ARM64.'
+}
+if ($buildApkScript -match '--no-daemon') {
+    throw 'scripts/build-apk.ps1 must not disable the Gradle daemon.'
+}
+if ($buildApkScript -match 'assembleAfatDebug') {
+    throw 'scripts/build-apk.ps1 must not use the Telegram debug/private variant.'
+}
+if ($buildApkScript -notmatch "prepare-integration\.ps1") {
+    throw 'scripts/build-apk.ps1 must refresh the overlay incrementally before building.'
+}
+if ($buildApkScript -notmatch '--parallel') {
+    throw 'scripts/build-apk.ps1 must keep Gradle parallel execution enabled.'
+}
+if ($buildApkScript -notmatch '\[switch\]\$Offline') {
+    throw 'scripts/build-apk.ps1 must expose offline repeat builds.'
+}
+
+$prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
+if ($prepareScript -notmatch 'Reusing pinned Telegram checkout') {
+    throw 'prepare-integration.ps1 must preserve the pinned Telegram checkout for incremental builds.'
+}
+if ($prepareScript -notmatch 'Reusing core AAR') {
+    throw 'prepare-integration.ps1 must reuse an existing pinned core AAR.'
+}
+
+$brandingIconPath = Join-Path $root 'integration/branding/res/drawable-nodpi/tgwsproxy_launcher_source.png'
+$brandingBlob = (& git hash-object $brandingIconPath).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Failed to hash launcher icon source.' }
+if ($brandingBlob -ne '7c943f64d8beb01df6e5dd16128fc0ca0a56e863') {
+    throw "Launcher icon source does not match tg-ws-proxy-android/icon.png: $brandingBlob"
+}
+
+$legacyLauncher = Get-Content (Join-Path $root 'integration/branding/res/values/tgwsproxy_launcher.xml') -Raw
+if ($legacyLauncher -notmatch 'type="mipmap" name="tgwsproxy_launcher"') {
+    throw 'Legacy launcher mipmap alias is missing.'
+}
+if ($legacyLauncher -notmatch '@drawable/tgwsproxy_launcher_source') {
+    throw 'Legacy launcher alias must point to the tracked TgWsProxy artwork.'
+}
+
+$adaptiveLauncher = Get-Content (Join-Path $root 'integration/branding/res/mipmap-anydpi-v26/tgwsproxy_launcher.xml') -Raw
+if ($adaptiveLauncher -notmatch '<adaptive-icon') {
+    throw 'API 26+ adaptive launcher resource is missing.'
+}
+if ($adaptiveLauncher -notmatch '@drawable/tgwsproxy_launcher_source') {
+    throw 'Adaptive launcher resource must use the tracked TgWsProxy artwork.'
+}
+
+$applyScript = Get-Content (Join-Path $root 'scripts/apply-integration.ps1') -Raw
+if ($applyScript -notmatch '\.tgwsproxy/branding/AndroidManifest_standalone\.xml') {
+    throw 'Integration script must generate and use the branded standalone manifest.'
+}
+if ($applyScript -notmatch '\.tgwsproxy/branding/res') {
+    throw 'Integration script must attach generated branding resources to the app source sets.'
+}
+if ($applyScript -notmatch 'android:label="Telegram-WSP"') {
+    throw 'Integration script must set the Telegram-WSP application label.'
 }
 
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
@@ -94,6 +176,79 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     $tgnetChanges = @(& git -C $telegramWorktree status --porcelain -- 'TMessagesProj/jni/tgnet/')
     if ($tgnetChanges.Count -gt 0) {
         throw "Prepared integration modified forbidden tgnet paths: $($tgnetChanges -join ', ')"
+    }
+
+    $preparedBuildVarsPath = Join-Path $telegramWorktree 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
+    $preparedBuildVars = Get-Content $preparedBuildVarsPath -Raw
+    if ($preparedBuildVars -notmatch 'public static boolean SUPPORTS_PASSKEYS = false;') {
+        throw 'Prepared Telegram fork still enables official-app-only passkeys.'
+    }
+    if ($preparedBuildVars -notmatch 'BuildConfig\.TELEGRAM_API_ID') {
+        throw 'Prepared Telegram BuildVars does not use injected API credentials.'
+    }
+
+    $preparedCoreBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj/build.gradle') -Raw
+    if ($preparedCoreBuild -notmatch '(?m)^        prototype \{') {
+        throw 'Prepared Telegram core is missing the fast prototype build type.'
+    }
+    if ($preparedCoreBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false[\s\S]*?DEBUG_VERSION", "false"[\s\S]*?DEBUG_PRIVATE_VERSION", "false"') {
+        throw 'Prepared Telegram core prototype must be non-minified with debug/private flags disabled.'
+    }
+    if ($preparedCoreBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
+        throw 'Prepared Telegram core is missing the ARM64-only prototype filter.'
+    }
+
+    $preparedAppBuild = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/build.gradle') -Raw
+    if ($preparedAppBuild -notmatch '(?m)^        prototype \{') {
+        throw 'Prepared Telegram app is missing the fast prototype build type.'
+    }
+    if ($preparedAppBuild -notmatch 'prototype \{[\s\S]*?minifyEnabled false') {
+        throw 'Prepared Telegram app prototype must disable minification.'
+    }
+    if ($preparedAppBuild -notmatch 'sourceSets\.prototype') {
+        throw 'Prepared Telegram app prototype must use the standalone manifest.'
+    }
+    if ($preparedAppBuild -notmatch 'TGWS_PROXY_ARM64_ONLY') {
+        throw 'Prepared Telegram app is missing the ARM64-only prototype filter.'
+    }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/AndroidManifest_standalone\.xml') {
+        throw 'Prepared Telegram app does not use the generated branded standalone manifest.'
+    }
+    if ($preparedAppBuild -notmatch '\.tgwsproxy/branding/res') {
+        throw 'Prepared Telegram app does not include generated launcher branding resources.'
+    }
+
+    $generatedBrandingRoot = Join-Path $telegramWorktree '.tgwsproxy/branding'
+    $generatedBrandingManifestPath = Join-Path $generatedBrandingRoot 'AndroidManifest_standalone.xml'
+    $generatedBrandingIconPath = Join-Path $generatedBrandingRoot 'res/drawable-nodpi/tgwsproxy_launcher_source.png'
+    $generatedLegacyLauncherPath = Join-Path $generatedBrandingRoot 'res/values/tgwsproxy_launcher.xml'
+    $generatedAdaptiveLauncherPath = Join-Path $generatedBrandingRoot 'res/mipmap-anydpi-v26/tgwsproxy_launcher.xml'
+    foreach ($brandingPath in @($generatedBrandingManifestPath, $generatedBrandingIconPath, $generatedLegacyLauncherPath, $generatedAdaptiveLauncherPath)) {
+        if (-not (Test-Path $brandingPath)) {
+            throw "Prepared Telegram branding file is missing: $brandingPath"
+        }
+    }
+
+    $generatedBrandingManifest = Get-Content $generatedBrandingManifestPath -Raw
+    if ($generatedBrandingManifest -notmatch 'android:icon="@mipmap/tgwsproxy_launcher"') {
+        throw 'Prepared standalone manifest does not use TgWsProxy as the launcher icon.'
+    }
+    if ($generatedBrandingManifest -notmatch 'android:roundIcon="@mipmap/tgwsproxy_launcher"') {
+        throw 'Prepared standalone manifest does not use TgWsProxy as the round launcher icon.'
+    }
+    if ($generatedBrandingManifest -notmatch 'android:label="Telegram-WSP"') {
+        throw 'Prepared standalone manifest does not use Telegram-WSP as the application label.'
+    }
+
+    $generatedBrandingBlob = (& git hash-object $generatedBrandingIconPath).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to hash generated launcher icon.' }
+    if ($generatedBrandingBlob -ne $brandingBlob) {
+        throw "Generated launcher icon differs from tracked source: $generatedBrandingBlob != $brandingBlob"
+    }
+
+    $preparedBootstrap = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java') -Raw
+    if ($preparedBootstrap -notmatch '@connection_mode=cf_first') {
+        throw 'Prepared Telegram bootstrap must prefer the Cloudflare proxy route.'
     }
 
     $changes = @(
