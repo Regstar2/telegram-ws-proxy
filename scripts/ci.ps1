@@ -29,7 +29,8 @@ $required = @(
     'scripts/build-core.ps1',
     'scripts/apply-integration.ps1',
     'scripts/prepare-integration.ps1',
-    'scripts/build-apk.ps1'
+    'scripts/build-apk.ps1',
+    'scripts/diagnose-xiaomi-dark-mode.ps1'
 )
 
 foreach ($path in $required) {
@@ -249,6 +250,18 @@ if (Test-Path (Join-Path $telegramWorktree '.git')) {
     $preparedBootstrap = Get-Content (Join-Path $telegramWorktree 'TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/TgWsProxyBootstrap.java') -Raw
     if ($preparedBootstrap -notmatch '@connection_mode=cf_first') {
         throw 'Prepared Telegram bootstrap must prefer the Cloudflare proxy route.'
+    }
+    if ($preparedBootstrap -notmatch 'TelegramWSPTheme') {
+        throw 'Diagnostic branch must emit Telegram runtime theme state.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.getActiveTheme\(\)') {
+        throw 'Diagnostic branch must report the active Telegram theme.'
+    }
+    if ($preparedBootstrap -notmatch 'Theme\.isCurrentThemeDark\(\)') {
+        throw 'Diagnostic branch must report whether the active Telegram theme is dark.'
+    }
+    if ($preparedBootstrap -notmatch 'key_windowBackgroundWhiteBlackText') {
+        throw 'Diagnostic branch must report the intro text color key.'
     }
 
     $changes = @(
