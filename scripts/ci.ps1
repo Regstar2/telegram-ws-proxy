@@ -221,7 +221,13 @@ if ($keystoreScript -notmatch 'minimum 12 characters') {
 }
 
 $gitIgnoreText = Get-Content (Join-Path $root '.gitignore') -Raw
-if ($gitIgnoreText -notmatch '(?m)^/\.signing/
+if (-not $gitIgnoreText.Contains('/.signing/')) {
+    throw 'Release signing directory must be ignored by Git.'
+}
+if (-not $gitIgnoreText.Contains('*.p12')) {
+    throw 'PKCS12 release keys must be ignored by Git.'
+}
+
 $licenseText = Get-Content (Join-Path $root 'LICENSE') -Raw
 if ($licenseText -notmatch 'GNU GENERAL PUBLIC LICENSE\s+Version 3') {
     throw 'Project LICENSE is expected to contain GNU GPL version 3.'
