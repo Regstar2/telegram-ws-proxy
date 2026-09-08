@@ -92,8 +92,42 @@ if (-not (Test-Path $apk)) {
     throw "Telegram APK was not produced at the expected path: $apk"
 }
 
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$apkArchive = [System.IO.Compression.ZipFile]::OpenRead($apk)
+try {
+    $themeEntries = @(
+        $apkArchive.Entries |
+            Where-Object { $_.FullName -match '^assets/[^/]+\.attheme$' }
+    )
+    if ($themeEntries.Count -eq 0) {
+        throw 'Built APK contains no top-level Telegram .attheme assets.'
+    }
+
+    foreach ($themeEntry in $themeEntries) {
+        $entryStream = $themeEntry.Open()
+        $memory = New-Object System.IO.MemoryStream
+        try {
+            $entryStream.CopyTo($memory)
+            $themeBytes = $memory.ToArray()
+        }
+        finally {
+            $memory.Dispose()
+            $entryStream.Dispose()
+        }
+
+        if ($themeBytes -contains [byte]13) {
+            throw "Built APK Telegram theme asset still contains CR bytes: $($themeEntry.FullName)"
+        }
+    }
+}
+finally {
+    $apkArchive.Dispose()
+}
+
 $apkItem = Get-Item $apk
 Write-Host 'Telegram APK built successfully.'
 Write-Host "Mode: $mode"
 Write-Host "APK: $($apkItem.FullName)"
 Write-Host "Size: $($apkItem.Length) bytes"
+Write-Host "APK LF theme assets verified: $($themeEntries.Count) file(s)"
