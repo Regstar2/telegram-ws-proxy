@@ -59,6 +59,17 @@ foreach ($scriptFile in $powerShellScripts) {
     }
 }
 
+$diagnosticScript = Get-Content (Join-Path $root 'scripts/diagnose-xiaomi-dark-mode.ps1') -Raw
+if ($diagnosticScript -match '\[string\[\]\]\$Args') {
+    throw 'diagnose-xiaomi-dark-mode.ps1 must not shadow the PowerShell automatic $Args variable.'
+}
+if ($diagnosticScript -match '@Args') {
+    throw 'diagnose-xiaomi-dark-mode.ps1 must not splat the PowerShell automatic @Args variable.'
+}
+if ($diagnosticScript -notmatch '\$AdbArguments' -or $diagnosticScript -notmatch '@AdbArguments') {
+    throw 'diagnose-xiaomi-dark-mode.ps1 must use an explicit ADB argument array for native invocation.'
+}
+
 $buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
 if ($buildApkScript -notmatch 'assembleAfatPrototype') {
     throw 'scripts/build-apk.ps1 must default to the fast afatPrototype variant.'
