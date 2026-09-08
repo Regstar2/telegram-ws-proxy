@@ -39,6 +39,26 @@ foreach ($path in $required) {
     }
 }
 
+$powerShellScripts = @(Get-ChildItem (Join-Path $root 'scripts') -File -Filter '*.ps1')
+foreach ($scriptFile in $powerShellScripts) {
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $scriptFile.FullName,
+        [ref]$tokens,
+        [ref]$parseErrors
+    ) | Out-Null
+
+    if ($parseErrors.Count -gt 0) {
+        $details = @(
+            $parseErrors | ForEach-Object {
+                "{0}:{1} {2}" -f $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber, $_.Message
+            }
+        )
+        throw "PowerShell syntax error in $($scriptFile.Name): $($details -join '; ')"
+    }
+}
+
 $buildApkScript = Get-Content (Join-Path $root 'scripts/build-apk.ps1') -Raw
 if ($buildApkScript -notmatch 'assembleAfatPrototype') {
     throw 'scripts/build-apk.ps1 must default to the fast afatPrototype variant.'
