@@ -202,6 +202,10 @@ if ($releaseBuildScript -notmatch 'build-apk\.ps1' -or $releaseBuildScript -notm
 if ($releaseBuildScript -notmatch 'TELEGRAM_WSP_KEYSTORE_PASSWORD') {
     throw 'Release build script must inject signing credentials only through the process environment.'
 }
+
+if ($releaseBuildScript -notmatch 'managedSigningPattern' -or $releaseBuildScript -notmatch 'existing Telegram-WSP keystore configuration reused') {
+    throw 'Release build script must accept an already managed Telegram-WSP signing block in an incremental worktree.'
+}
 if ($releaseBuildScript -notmatch 'apksigner\.bat' -or $releaseBuildScript -notmatch 'verify --verbose --print-certs') {
     throw 'Release build script must verify the produced APK signature.'
 }
