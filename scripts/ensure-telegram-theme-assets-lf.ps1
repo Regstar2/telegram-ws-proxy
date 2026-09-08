@@ -18,107 +18,110 @@ if (-not (Test-Path $gitDir)) {
     throw "Telegram checkout not found: $telegram"
 }
 
-$attributeRule = '*.attheme text eol=lf'
+# Remove the obsolete local attribute rule from the earlier in-place approach.
 $attributesPath = Join-Path $gitDir 'info/attributes'
-$attributesDir = Split-Path -Parent $attributesPath
-New-Item -ItemType Directory -Path $attributesDir -Force | Out-Null
-
-$attributesText = if (Test-Path $attributesPath) {
-    [System.IO.File]::ReadAllText($attributesPath)
-} else {
-    ''
-}
-
-if ($attributesText -notmatch '(?m)^\*\.attheme text eol=lf\s*$') {
-    if ($attributesText.Length -gt 0 -and -not $attributesText.EndsWith("`n")) {
-        $attributesText += "`n"
+if (Test-Path $attributesPath) {
+    $attributeLines = @([System.IO.File]::ReadAllLines($attributesPath))
+    $filteredAttributeLines = @(
+        $attributeLines | Where-Object { $_.Trim() -ne '*.attheme text eol=lf' }
+    )
+    if ($filteredAttributeLines.Count -ne $attributeLines.Count) {
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllLines($attributesPath, $filteredAttributeLines, $utf8NoBom)
     }
-    $attributesText += $attributeRule + "`n"
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($attributesPath, $attributesText, $utf8NoBom)
 }
 
 $themeAssets = @(
-    & git -C $telegram ls-files -- ':(glob)**/*.attheme' |
+    & git -C $telegram ls-files -- ':(glob)TMessagesProj/src/main/assets/*.attheme' |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 )
 if ($LASTEXITCODE -ne 0) {
-    throw 'Failed to enumerate Telegram .attheme assets.'
+    throw 'Failed to enumerate Telegram built-in .attheme assets.'
 }
 if ($themeAssets.Count -eq 0) {
-    throw 'Telegram checkout contains no tracked .attheme assets.'
+    throw 'Telegram checkout contains no tracked built-in .attheme assets.'
 }
 
-function Test-ContainsCarriageReturn([string]$Path) {
-    $bytes = [System.IO.File]::ReadAllBytes($Path)
-    return $bytes -contains [byte]13
+# Clean up only the line-ending-only modifications produced by the previous helper.
+foreach ($asset in $themeAssets) {
+    $statusLine = @(& git -C $telegram status --porcelain -- $asset)
+    if ($statusLine.Count -eq 0) {
+        continue
+    }
+
+    & git -C $telegram diff --quiet --ignore-space-at-eol -- $asset
+    $lineEndingOnly = $LASTEXITCODE -eq 0
+    if (-not $lineEndingOnly) {
+        throw "Refusing to overwrite a semantic local change in Telegram theme asset: $asset"
+    }
+
+    & git -C $telegram checkout HEAD -- $asset
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to restore tracked Telegram theme asset: $asset"
+    }
 }
 
-function Convert-CrlfToLf([string]$Path) {
-    $bytes = [System.IO.File]::ReadAllBytes($Path)
+$remainingTrackedChanges = @(
+    & git -C $telegram status --porcelain -- $themeAssets |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
+if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to verify tracked Telegram theme asset status.'
+}
+if ($remainingTrackedChanges.Count -gt 0) {
+    throw "Tracked Telegram theme assets must remain untouched: $($remainingTrackedChanges -join ', ')"
+}
+
+function Convert-CrlfBytesToLf([byte[]]$Bytes) {
     $stream = New-Object System.IO.MemoryStream
-
     try {
-        for ($index = 0; $index -lt $bytes.Length; $index++) {
-            $current = $bytes[$index]
-
+        for ($index = 0; $index -lt $Bytes.Length; $index++) {
+            $current = $Bytes[$index]
             if (
                 $current -eq [byte]13 -and
-                ($index + 1) -lt $bytes.Length -and
-                $bytes[$index + 1] -eq [byte]10
+                ($index + 1) -lt $Bytes.Length -and
+                $Bytes[$index + 1] -eq [byte]10
             ) {
                 continue
             }
-
             $stream.WriteByte($current)
         }
-
-        [System.IO.File]::WriteAllBytes($Path, $stream.ToArray())
+        return $stream.ToArray()
     }
     finally {
         $stream.Dispose()
     }
 }
 
-$crlfAssets = @(
-    foreach ($asset in $themeAssets) {
-        $assetPath = Join-Path $telegram ($asset -replace '/', [System.IO.Path]::DirectorySeparatorChar)
-        if (Test-ContainsCarriageReturn $assetPath) {
-            $asset
-        }
+$generatedRoot = Join-Path $telegram '.tgwsproxy/theme-assets'
+if (Test-Path $generatedRoot) {
+    Remove-Item -Recurse -Force $generatedRoot
+}
+New-Item -ItemType Directory -Path $generatedRoot -Force | Out-Null
+
+$normalizedCount = 0
+foreach ($asset in $themeAssets) {
+    $sourcePath = Join-Path $telegram ($asset -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    $sourceBytes = [System.IO.File]::ReadAllBytes($sourcePath)
+    $generatedBytes = Convert-CrlfBytesToLf $sourceBytes
+
+    if ($generatedBytes.Length -ne $sourceBytes.Length) {
+        $normalizedCount++
     }
-)
 
-if ($crlfAssets.Count -gt 0) {
-    Write-Host "Normalizing Telegram theme assets to LF: $($crlfAssets.Count) file(s)"
-    foreach ($asset in $crlfAssets) {
-        $assetPath = Join-Path $telegram ($asset -replace '/', [System.IO.Path]::DirectorySeparatorChar)
-        Convert-CrlfToLf $assetPath
+    if ($generatedBytes -contains [byte]13) {
+        throw "Generated Telegram theme asset still contains CR bytes: $asset"
     }
+
+    $targetPath = Join-Path $generatedRoot ([System.IO.Path]::GetFileName($asset))
+    [System.IO.File]::WriteAllBytes($targetPath, $generatedBytes)
 }
 
-$invalidAssets = @(
-    foreach ($asset in $themeAssets) {
-        $assetPath = Join-Path $telegram ($asset -replace '/', [System.IO.Path]::DirectorySeparatorChar)
-        if (Test-ContainsCarriageReturn $assetPath) {
-            $asset
-        }
-    }
-)
-
-if ($invalidAssets.Count -gt 0) {
-    throw "Telegram .attheme assets still contain CR bytes after CRLF normalization: $($invalidAssets -join ', ')"
+$generatedAssets = @(Get-ChildItem $generatedRoot -File -Filter '*.attheme')
+if ($generatedAssets.Count -ne $themeAssets.Count) {
+    throw "Generated Telegram theme overlay count mismatch: $($generatedAssets.Count) != $($themeAssets.Count)"
 }
 
-$unexpectedChanges = @(
-    & git -C $telegram status --porcelain -- $themeAssets |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-)
-if ($LASTEXITCODE -ne 0) {
-    throw 'Failed to verify Telegram theme asset Git status.'
-}
-if ($unexpectedChanges.Count -gt 0) {
-    throw "LF normalization changed tracked Telegram theme content: $($unexpectedChanges -join ', ')"
-}
-
-Write-Host "Telegram theme assets use LF line endings: $($themeAssets.Count) file(s)"
+Write-Host "Prepared LF Telegram theme asset overlay: $($generatedAssets.Count) file(s)"
+Write-Host "Source assets requiring CRLF normalization: $normalizedCount"
+Write-Host "Generated overlay: $generatedRoot"
