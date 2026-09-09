@@ -226,8 +226,20 @@ try {
         throw "Release workflow run $runId failed."
     }
 
-    $upstreamConfig = Get-Content (Join-Path $root 'config/upstream.json') -Raw | ConvertFrom-Json
-    $tag = "v$($upstreamConfig.telegramVersion)-wsp.$Revision"
+    $tag = (
+        & gh release list `
+            --repo $Repository `
+            --limit 1 `
+            --json tagName `
+            --jq '.[0].tagName'
+    ).Trim()
+
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tag)) {
+        throw 'The completed workflow did not publish a GitHub Release.'
+    }
+    if ($tag -notmatch ("^v.+-wsp\." + [regex]::Escape([string]$Revision) + "$")) {
+        throw "Latest GitHub Release has an unexpected revision: $tag"
+    }
 
     Write-Host ''
     Write-Host "Verifying GitHub Release $tag..."
