@@ -133,6 +133,14 @@ cd telegram-wsp
 
 После настройки repository secrets `RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` workflow `.github/workflows/release.yml` собирает и публикует подписанный APK без локального компьютера.
 
+Для первой настройки можно не создавать четыре Secrets вручную в GitHub UI. На машине, где уже лежит постоянный `.signing/telegram-wsp-release.p12`, выполните:
+
+```powershell
+./scripts/bootstrap-release-actions.ps1
+```
+
+Скрипт проверяет release key, берёт Telegram API credentials из `.work/telegram/local.properties`, загружает четыре Secrets через `gh`, запускает production `upstream-sync.yml` с `force_release=true` и ждёт публикации первого GitHub Release. Для хотфикса той же версии Telegram можно передать, например, `-Revision 2`.
+
 `.github/workflows/upstream-sync.yml` раз в сутки проверяет `DrKLO/Telegram`. При новом `APP_VERSION_NAME/APP_VERSION_CODE` он обновляет `config/upstream.json`, воспроизводит integration layer, запускает гейты и только после успеха коммитит новый pin и вызывает release workflow. Коммиты master без изменения версии автоматически не публикуются.
 
 Каждый GitHub Release содержит APK, `latest.json`, SHA-256 и архивы точных source-компонентов Telegram/tgwsproxy-core/overlay. Стабильный update feed:
