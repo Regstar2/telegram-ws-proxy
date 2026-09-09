@@ -76,15 +76,7 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to fetch Telegram commit $commit." }
 if ($LASTEXITCODE -ne 0) { throw 'Failed to checkout fetched Telegram commit.' }
 
 $submoduleConfigLines = @(
-    & git -C $destinationPath config -f .gitmodules --get-regexp '^submodule\..*\.path
-$actual = (& git -C $destinationPath rev-parse HEAD).Trim()
-if ($actual -ne $commit) {
-    throw "Unexpected HEAD '$actual'. Expected '$commit'."
-}
-
-Write-Host "Telegram upstream ready: $destinationPath"
-Write-Host "HEAD: $actual"
-
+    & git -C $destinationPath config -f .gitmodules --get-regexp '^submodule\..*\.path$'
 )
 if ($LASTEXITCODE -ne 0) {
     throw 'Failed to enumerate Telegram submodules from .gitmodules.'
