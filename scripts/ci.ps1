@@ -241,7 +241,7 @@ if ($fetchUpstreamScript -notmatch "config -f \.gitmodules --get-regexp" -or $fe
 foreach ($requiredNativeInput in @(
     'jlatexmath/jlatexmath/build.gradle',
     'third_party/libyuv/CMakeLists.txt',
-    'third_party/dav1d/libdav1d/include/dav1d/dav1d.h',
+    'third_party/dav1d/include/dav1d/dav1d.h',
     'third_party/openh264/codec/api/wels/codec_api.h',
     'third_party/xiph/ogg/src/bitwise.c',
     'third_party/xiph/opus/include/opus.h',
