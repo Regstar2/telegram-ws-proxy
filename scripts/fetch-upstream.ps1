@@ -75,10 +75,37 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to fetch Telegram commit $commit." }
 & git -C $destinationPath checkout --detach FETCH_HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Failed to checkout fetched Telegram commit.' }
 
-$requiredSubmodules = @(
-    'TMessagesProj/lib/jlatexmath'
+$submoduleConfigLines = @(
+    & git -C $destinationPath config -f .gitmodules --get-regexp '^submodule\..*\.path
+$actual = (& git -C $destinationPath rev-parse HEAD).Trim()
+if ($actual -ne $commit) {
+    throw "Unexpected HEAD '$actual'. Expected '$commit'."
+}
+
+Write-Host "Telegram upstream ready: $destinationPath"
+Write-Host "HEAD: $actual"
+
 )
-foreach ($submodule in $requiredSubmodules) {
+if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to enumerate Telegram submodules from .gitmodules.'
+}
+
+$submodulePaths = @(
+    $submoduleConfigLines |
+        ForEach-Object {
+            $parts = @($_ -split '\s+', 2)
+            if ($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[1])) {
+                throw "Unexpected Telegram submodule path metadata: $_"
+            }
+            $parts[1].Trim()
+        }
+)
+
+if ($submodulePaths.Count -eq 0) {
+    throw 'Pinned Telegram checkout declares no submodules.'
+}
+
+foreach ($submodule in $submodulePaths) {
     Write-Host "Initializing Telegram submodule: $submodule"
     & git -C $destinationPath submodule update --init --depth 1 -- $submodule
     if ($LASTEXITCODE -ne 0) {
@@ -86,9 +113,21 @@ foreach ($submodule in $requiredSubmodules) {
     }
 }
 
-$jlatexBuild = Join-Path $destinationPath 'TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle'
-if (-not (Test-Path $jlatexBuild)) {
-    throw "Telegram jlatexmath submodule is incomplete: $jlatexBuild"
+$requiredBuildInputs = @(
+    'TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle',
+    'TMessagesProj/jni/third_party/libyuv/CMakeLists.txt',
+    'TMessagesProj/jni/third_party/dav1d/libdav1d/include/dav1d/dav1d.h',
+    'TMessagesProj/jni/third_party/openh264/codec/api/wels/codec_api.h',
+    'TMessagesProj/jni/third_party/xiph/ogg/src/bitwise.c',
+    'TMessagesProj/jni/third_party/xiph/opus/include/opus.h',
+    'TMessagesProj/jni/third_party/xiph/opusfile/src/opusfile.c',
+    'TMessagesProj/jni/tlottie/include/tlottie.h'
+)
+foreach ($relativePath in $requiredBuildInputs) {
+    $requiredPath = Join-Path $destinationPath $relativePath
+    if (-not (Test-Path $requiredPath)) {
+        throw "Telegram submodule build input is missing: $requiredPath"
+    }
 }
 
 $actual = (& git -C $destinationPath rev-parse HEAD).Trim()
