@@ -75,6 +75,21 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to fetch Telegram commit $commit." }
 & git -C $destinationPath checkout --detach FETCH_HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Failed to checkout fetched Telegram commit.' }
 
+$requiredSubmodules = @(
+    'TMessagesProj/lib/jlatexmath'
+)
+foreach ($submodule in $requiredSubmodules) {
+    Write-Host "Initializing Telegram submodule: $submodule"
+    & git -C $destinationPath submodule update --init --depth 1 -- $submodule
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to initialize Telegram submodule: $submodule"
+    }
+}
+
+$jlatexBuild = Join-Path $destinationPath 'TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle'
+if (-not (Test-Path $jlatexBuild)) {
+    throw "Telegram jlatexmath submodule is incomplete: $jlatexBuild"
+}
 
 $actual = (& git -C $destinationPath rev-parse HEAD).Trim()
 if ($actual -ne $commit) {

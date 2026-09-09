@@ -173,6 +173,10 @@ if ($sourcePackageScript -notmatch 'Telegram-upstream-source' -or $sourcePackage
     throw 'Release source packaging must include Telegram, tgwsproxy-core, overlay source and a source manifest.'
 }
 
+if ($sourcePackageScript -notmatch 'jlatexmath-source' -or $sourcePackageScript -notmatch 'jlatexmathCommit') {
+    throw 'Release source packaging must include the exact Telegram jlatexmath submodule source.'
+}
+
 $releaseWorkflow = Get-Content (Join-Path $root '.github/workflows/release.yml') -Raw
 if ($releaseWorkflow -notmatch 'RELEASE_KEYSTORE_BASE64' -or $releaseWorkflow -notmatch 'build-release\.ps1' -or $releaseWorkflow -notmatch 'gh release create') {
     throw 'Release workflow must restore the signing key, build the APK and publish a GitHub Release.'
@@ -225,6 +229,14 @@ if ($releaseBootstrapScript -notmatch 'ConvertFrom-Json') {
 
 if ($releaseBootstrapScript -notmatch 'ConvertFrom-Json -InputObject' -or $releaseBootstrapScript -notmatch '-join \[Environment\]::NewLine') {
     throw 'Release bootstrap must join GitHub CLI JSON output before parsing arrays.'
+}
+
+$fetchUpstreamScript = Get-Content (Join-Path $root 'scripts/fetch-upstream.ps1') -Raw
+if ($fetchUpstreamScript -notmatch 'submodule update --init --depth 1' -or $fetchUpstreamScript -notmatch 'TMessagesProj/lib/jlatexmath') {
+    throw 'Telegram upstream fetch must initialize the pinned jlatexmath submodule required by the standalone build.'
+}
+if ($fetchUpstreamScript -notmatch 'jlatexmath/build.gradle') {
+    throw 'Telegram upstream fetch must verify that the jlatexmath Android project is present.'
 }
 
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
