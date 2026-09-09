@@ -149,15 +149,16 @@ try {
         $keystoreBase64 = $null
     }
 
-    $secretListJson = & gh secret list --repo $Repository --json name
+    $secretListLines = @(& gh secret list --repo $Repository --json name)
     $secretListSucceeded = $?
     if (-not $secretListSucceeded) {
         throw 'Could not verify configured GitHub Actions secret names.'
     }
+    $secretList = @(
+        ConvertFrom-Json -InputObject ($secretListLines -join [Environment]::NewLine)
+    )
     $secretNames = @(
-        $secretListJson |
-            ConvertFrom-Json |
-            ForEach-Object { [string]$_.name }
+        $secretList | ForEach-Object { [string]$_.name }
     )
 
     foreach ($required in @(
@@ -173,19 +174,20 @@ try {
 
     Write-Host 'GitHub Actions release secrets: OK'
 
-    $existingRunsJson = & gh run list `
+    $existingRunsLines = @(& gh run list `
         --repo $Repository `
         --workflow 'upstream-sync.yml' `
         --limit 20 `
-        --json databaseId,event,status,createdAt
+        --json databaseId,event,status,createdAt)
     $existingRunsSucceeded = $?
     if (-not $existingRunsSucceeded) {
         throw 'Could not read existing upstream-sync workflow runs.'
     }
+    $existingRunObjects = @(
+        ConvertFrom-Json -InputObject ($existingRunsLines -join [Environment]::NewLine)
+    )
     $existingRuns = @(
-        $existingRunsJson |
-            ConvertFrom-Json |
-            ForEach-Object { [string]$_.databaseId }
+        $existingRunObjects | ForEach-Object { [string]$_.databaseId }
     )
 
     Write-Host "Starting Telegram-WSP release revision $Revision through upstream-sync.yml..."
@@ -203,17 +205,19 @@ try {
     for ($attempt = 0; $attempt -lt 20 -and -not $runId; $attempt++) {
         Start-Sleep -Seconds 3
 
-        $candidateRunsJson = & gh run list `
+        $candidateRunLines = @(& gh run list `
             --repo $Repository `
             --workflow 'upstream-sync.yml' `
             --limit 20 `
-            --json databaseId,event,status,createdAt
+            --json databaseId,event,status,createdAt)
         $candidateRunsSucceeded = $?
         if (-not $candidateRunsSucceeded) {
             throw 'Could not read upstream-sync workflow runs after dispatch.'
         }
 
-        $candidateRuns = @($candidateRunsJson | ConvertFrom-Json)
+        $candidateRuns = @(
+            ConvertFrom-Json -InputObject ($candidateRunLines -join [Environment]::NewLine)
+        )
         foreach ($candidate in $candidateRuns) {
             if ($candidate.event -ne 'workflow_dispatch') {
                 continue
@@ -243,16 +247,18 @@ try {
         throw "Release workflow run $runId failed."
     }
 
-    $releaseListJson = & gh release list `
+    $releaseListLines = @(& gh release list `
         --repo $Repository `
         --limit 1 `
-        --json tagName
+        --json tagName)
     $releaseListSucceeded = $?
     if (-not $releaseListSucceeded) {
         throw 'Could not read the latest GitHub Release.'
     }
 
-    $releaseList = @($releaseListJson | ConvertFrom-Json)
+    $releaseList = @(
+        ConvertFrom-Json -InputObject ($releaseListLines -join [Environment]::NewLine)
+    )
     $tag = if ($releaseList.Count -gt 0) {
         [string]$releaseList[0].tagName
     } else {
