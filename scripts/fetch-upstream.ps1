@@ -108,7 +108,7 @@ foreach ($submodule in $submodulePaths) {
 $requiredBuildInputs = @(
     'TMessagesProj/lib/jlatexmath/jlatexmath/build.gradle',
     'TMessagesProj/jni/third_party/libyuv/CMakeLists.txt',
-    'TMessagesProj/jni/third_party/dav1d/libdav1d/include/dav1d/dav1d.h',
+    'TMessagesProj/jni/third_party/dav1d/include/dav1d/dav1d.h',
     'TMessagesProj/jni/third_party/openh264/codec/api/wels/codec_api.h',
     'TMessagesProj/jni/third_party/xiph/ogg/src/bitwise.c',
     'TMessagesProj/jni/third_party/xiph/opus/include/opus.h',
