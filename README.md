@@ -141,7 +141,9 @@ cd telegram-wsp
 https://github.com/Regstar2/telegram-wsp/releases/latest/download/latest.json
 ```
 
-Этот feed предназначен для встроенного updater. На обычном Android без root/device-owner установка APK всё равно требует подтверждения пользователя; полностью silent install недоступен обычному приложению.
+Этот feed используется встроенным updater Telegram-WSP. Приложение проверяет его не чаще одного раза в 12 часов, сравнивает Android `versionCode`, а после согласия пользователя скачивает APK, проверяет SHA-256 и тот же signing certificate, после чего открывает системный Android installer. На обычном Android без root/device-owner финальное подтверждение установки пользователем обязательно.
+
+Release tag имеет вид `v<telegramVersion>-wsp.<revision>`, например `v12.10.1-wsp.1`. Android `versionCode` включает и Telegram build, и WSP revision: `telegramBuild * 1000 + revision * 10 + 9`. Поэтому хотфикс `wsp.2` той же версии Telegram корректно обновляется поверх `wsp.1`.
 
 Для локальной сборки с собственными Telegram `api_id` / `api_hash` используйте переменные `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` либо локальный `.work/telegram/local.properties`; значения не должны попадать в Git. Подробности: [integration/README.md](integration/README.md).
 

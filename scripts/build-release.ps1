@@ -4,6 +4,7 @@ param(
     [string]$Keystore = '.signing/telegram-wsp-release.p12',
     [string]$KeyAlias = 'telegram-wsp-release',
     [string]$Output = 'dist/Telegram-WSP-release.apk',
+    [ValidateRange(1, 99)][int]$ReleaseRevision = 1,
     [switch]$Offline
 )
 
@@ -206,6 +207,7 @@ if ([string]::IsNullOrEmpty($password)) {
 $env:TELEGRAM_WSP_KEYSTORE = $keystorePath
 $env:TELEGRAM_WSP_KEYSTORE_PASSWORD = $password
 $env:TELEGRAM_WSP_KEY_ALIAS = $KeyAlias
+$env:TELEGRAM_WSP_RELEASE_REVISION = [string]$ReleaseRevision
 
 try {
     Set-Content -Path $buildGradle -Value $build -NoNewline
@@ -265,6 +267,12 @@ try {
         throw 'Release APK application label is not Telegram-WSP.'
     }
 
+    $upstream = Get-Content (Join-Path $root 'config/upstream.json') -Raw | ConvertFrom-Json
+    $expectedVersionCode = ([int]$upstream.telegramBuild * 1000) + ($ReleaseRevision * 10) + 9
+    if ($badgingText -notmatch ("versionCode='" + [regex]::Escape([string]$expectedVersionCode) + "'")) {
+        throw "Release APK versionCode does not match WSP revision. Expected $expectedVersionCode."
+    }
+
     Write-Host 'APK metadata:'
     $badgingLines |
         Select-String -Pattern 'package:|application-label:|application-icon' |
@@ -287,10 +295,13 @@ try {
     Write-Host "SHA256: $($hash.Hash)"
     Write-Host "Keystore: $keystorePath"
     Write-Host "Alias: $KeyAlias"
+    Write-Host "Release revision: $ReleaseRevision"
+    Write-Host "Android versionCode: $expectedVersionCode"
 }
 finally {
     $password = $null
     Remove-Item Env:TELEGRAM_WSP_KEYSTORE_PASSWORD -ErrorAction SilentlyContinue
     Remove-Item Env:TELEGRAM_WSP_KEYSTORE -ErrorAction SilentlyContinue
     Remove-Item Env:TELEGRAM_WSP_KEY_ALIAS -ErrorAction SilentlyContinue
+    Remove-Item Env:TELEGRAM_WSP_RELEASE_REVISION -ErrorAction SilentlyContinue
 }

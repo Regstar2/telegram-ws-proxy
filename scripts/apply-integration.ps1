@@ -192,6 +192,24 @@ if ($build -notmatch 'TGWS_PROXY_ARM64_ONLY') {
     $build = $build.Replace($appAbiMarker, $appAbiBlock)
 }
 
+$appVersionCodeMarker = '            output.versionCodeOverride = defaultConfig.versionCode * 10 + variant.productFlavors.get(0).abiVersionCode'
+$appVersionCodeBlock = @'
+            def tgwsReleaseRevisionText = System.getenv('TELEGRAM_WSP_RELEASE_REVISION') ?: '1'
+            if (!(tgwsReleaseRevisionText ==~ /\d+/)) {
+                throw new GradleException('TELEGRAM_WSP_RELEASE_REVISION must contain decimal digits only.')
+            }
+            def tgwsReleaseRevision = Integer.parseInt(tgwsReleaseRevisionText)
+            if (tgwsReleaseRevision < 1 || tgwsReleaseRevision > 99) {
+                throw new GradleException('TELEGRAM_WSP_RELEASE_REVISION must be between 1 and 99.')
+            }
+            output.versionCodeOverride = defaultConfig.versionCode * 1000 + tgwsReleaseRevision * 10 + variant.productFlavors.get(0).abiVersionCode
+'@.TrimEnd()
+if ($build -notmatch 'TELEGRAM_WSP_RELEASE_REVISION') {
+    $count = ([regex]::Matches($build, [regex]::Escape($appVersionCodeMarker))).Count
+    if ($count -ne 1) { throw "Telegram app versionCode anchor count is $count; expected 1." }
+    $build = $build.Replace($appVersionCodeMarker, $appVersionCodeBlock)
+}
+
 Set-Content -Path $buildPath -Value $build -NoNewline
 
 $coreBuildPath = Join-Path $telegram 'TMessagesProj/build.gradle'
