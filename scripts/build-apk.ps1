@@ -60,6 +60,29 @@ if ($null -eq $gradle) {
     throw 'Gradle was not found in PATH.'
 }
 
+$jlatexAar = Join-Path $telegram 'TMessagesProj/lib/jlatexmath/jlatexmath/build/outputs/aar/jlatexmath-release.aar'
+$jlatexGradleArgs = @(':jlatexmath:assembleRelease', '--daemon', '--build-cache')
+if ($Offline) {
+    $jlatexGradleArgs += '--offline'
+}
+
+Write-Host 'Building Telegram jlatexmath AAR dependency...'
+Push-Location $telegram
+try {
+    & $gradle.Source @jlatexGradleArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Telegram jlatexmath AAR build failed with exit code $LASTEXITCODE."
+    }
+}
+finally {
+    Pop-Location
+}
+
+if (-not (Test-Path $jlatexAar)) {
+    throw "Telegram jlatexmath AAR was not produced: $jlatexAar"
+}
+Write-Host "Telegram jlatexmath AAR ready: $jlatexAar"
+
 if ($Full) {
     $task = ':TMessagesProj_AppStandalone:assembleAfatStandalone'
     $mode = 'full standalone'
