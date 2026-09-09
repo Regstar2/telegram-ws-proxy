@@ -156,8 +156,8 @@ $applyScript = Get-Content (Join-Path $root 'scripts/apply-integration.ps1') -Ra
 if ($applyScript -notmatch "api files\('lib/jlatexmath/jlatexmath/build/outputs/aar/jlatexmath-release\.aar'\)") {
     throw 'Integration overlay must consume jlatexmath through its prebuilt AAR to avoid standalone variant matching failures.'
 }
-if ($applyScript -match "api project\(':jlatexmath'\)") {
-    throw 'Integration overlay must replace the direct jlatexmath project dependency.'
+if ($applyScript -notmatch '\.Replace\(\$jlatexProjectDependency, \$jlatexAarDependency\)') {
+    throw 'Integration overlay must replace the direct jlatexmath project dependency with the prebuilt AAR dependency.'
 }
 
 $buildCoreScript = Get-Content (Join-Path $root 'scripts/build-core.ps1') -Raw
