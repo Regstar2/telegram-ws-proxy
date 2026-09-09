@@ -149,12 +149,16 @@ try {
         $keystoreBase64 = $null
     }
 
-    $secretNames = @(
-        & gh secret list --repo $Repository --json name --jq '.[].name'
-    )
-    if ($LASTEXITCODE -ne 0) {
+    $secretListJson = & gh secret list --repo $Repository --json name
+    $secretListSucceeded = $?
+    if (-not $secretListSucceeded) {
         throw 'Could not verify configured GitHub Actions secret names.'
     }
+    $secretNames = @(
+        $secretListJson |
+            ConvertFrom-Json |
+            ForEach-Object { [string]$_.name }
+    )
 
     foreach ($required in @(
         'RELEASE_KEYSTORE_BASE64',
@@ -169,13 +173,19 @@ try {
 
     Write-Host 'GitHub Actions release secrets: OK'
 
+    $existingRunsJson = & gh run list `
+        --repo $Repository `
+        --workflow 'upstream-sync.yml' `
+        --limit 20 `
+        --json databaseId,event,status,createdAt
+    $existingRunsSucceeded = $?
+    if (-not $existingRunsSucceeded) {
+        throw 'Could not read existing upstream-sync workflow runs.'
+    }
     $existingRuns = @(
-        & gh run list `
-            --repo $Repository `
-            --workflow 'upstream-sync.yml' `
-            --limit 20 `
-            --json databaseId `
-            --jq '.[].databaseId'
+        $existingRunsJson |
+            ConvertFrom-Json |
+            ForEach-Object { [string]$_.databaseId }
     )
 
     Write-Host "Starting Telegram-WSP release revision $Revision through upstream-sync.yml..."
@@ -193,18 +203,25 @@ try {
     for ($attempt = 0; $attempt -lt 20 -and -not $runId; $attempt++) {
         Start-Sleep -Seconds 3
 
-        $candidates = @(
-            & gh run list `
-                --repo $Repository `
-                --workflow 'upstream-sync.yml' `
-                --limit 20 `
-                --json databaseId,event,status,createdAt `
-                --jq '.[] | select(.event == "workflow_dispatch") | .databaseId'
-        )
+        $candidateRunsJson = & gh run list `
+            --repo $Repository `
+            --workflow 'upstream-sync.yml' `
+            --limit 20 `
+            --json databaseId,event,status,createdAt
+        $candidateRunsSucceeded = $?
+        if (-not $candidateRunsSucceeded) {
+            throw 'Could not read upstream-sync workflow runs after dispatch.'
+        }
 
-        foreach ($candidate in $candidates) {
-            if ($existingRuns -notcontains $candidate) {
-                $runId = $candidate
+        $candidateRuns = @($candidateRunsJson | ConvertFrom-Json)
+        foreach ($candidate in $candidateRuns) {
+            if ($candidate.event -ne 'workflow_dispatch') {
+                continue
+            }
+
+            $candidateId = [string]$candidate.databaseId
+            if ($existingRuns -notcontains $candidateId) {
+                $runId = $candidateId
                 break
             }
         }
@@ -226,15 +243,23 @@ try {
         throw "Release workflow run $runId failed."
     }
 
-    $tag = (
-        & gh release list `
-            --repo $Repository `
-            --limit 1 `
-            --json tagName `
-            --jq '.[0].tagName'
-    ).Trim()
+    $releaseListJson = & gh release list `
+        --repo $Repository `
+        --limit 1 `
+        --json tagName
+    $releaseListSucceeded = $?
+    if (-not $releaseListSucceeded) {
+        throw 'Could not read the latest GitHub Release.'
+    }
 
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tag)) {
+    $releaseList = @($releaseListJson | ConvertFrom-Json)
+    $tag = if ($releaseList.Count -gt 0) {
+        [string]$releaseList[0].tagName
+    } else {
+        ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($tag)) {
         throw 'The completed workflow did not publish a GitHub Release.'
     }
     if ($tag -notmatch ("^v.+-wsp\." + [regex]::Escape([string]$Revision) + "$")) {
