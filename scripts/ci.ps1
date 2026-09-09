@@ -209,6 +209,10 @@ if ($releaseBootstrapScript -notmatch 'ConvertFrom-Json') {
     throw 'Release bootstrap must parse GitHub CLI JSON natively in PowerShell.'
 }
 
+if ($releaseBootstrapScript -notmatch 'ConvertFrom-Json -InputObject' -or $releaseBootstrapScript -notmatch '-join \[Environment\]::NewLine') {
+    throw 'Release bootstrap must join GitHub CLI JSON output before parsing arrays.'
+}
+
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
 if ($prepareScript -notmatch 'Reusing pinned Telegram checkout') {
     throw 'prepare-integration.ps1 must preserve the pinned Telegram checkout for incremental builds.'
