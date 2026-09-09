@@ -176,6 +176,9 @@ if ($sourcePackageScript -notmatch 'Telegram-upstream-source' -or $sourcePackage
 if ($sourcePackageScript -notmatch 'jlatexmath-source' -or $sourcePackageScript -notmatch 'jlatexmathCommit') {
     throw 'Release source packaging must include the exact Telegram jlatexmath submodule source.'
 }
+if ($sourcePackageScript -notmatch 'telegramSubmodules' -or $sourcePackageScript -notmatch 'telegram-submodule-' -or $sourcePackageScript -notmatch "config -f \.gitmodules --get-regexp") {
+    throw 'Release source packaging must archive every pinned Telegram submodule declared by .gitmodules.'
+}
 
 $releaseWorkflow = Get-Content (Join-Path $root '.github/workflows/release.yml') -Raw
 if ($releaseWorkflow -notmatch 'RELEASE_KEYSTORE_BASE64' -or $releaseWorkflow -notmatch 'build-release\.ps1' -or $releaseWorkflow -notmatch 'gh release create') {
@@ -232,11 +235,22 @@ if ($releaseBootstrapScript -notmatch 'ConvertFrom-Json -InputObject' -or $relea
 }
 
 $fetchUpstreamScript = Get-Content (Join-Path $root 'scripts/fetch-upstream.ps1') -Raw
-if ($fetchUpstreamScript -notmatch 'submodule update --init --depth 1' -or $fetchUpstreamScript -notmatch 'TMessagesProj/lib/jlatexmath') {
-    throw 'Telegram upstream fetch must initialize the pinned jlatexmath submodule required by the standalone build.'
+if ($fetchUpstreamScript -notmatch "config -f \.gitmodules --get-regexp" -or $fetchUpstreamScript -notmatch 'submodule update --init --depth 1') {
+    throw 'Telegram upstream fetch must initialize all pinned submodules declared by Telegram.'
 }
-if ($fetchUpstreamScript -notmatch 'jlatexmath/build.gradle') {
-    throw 'Telegram upstream fetch must verify that the jlatexmath Android project is present.'
+foreach ($requiredNativeInput in @(
+    'jlatexmath/jlatexmath/build.gradle',
+    'third_party/libyuv/CMakeLists.txt',
+    'third_party/dav1d/libdav1d/include/dav1d/dav1d.h',
+    'third_party/openh264/codec/api/wels/codec_api.h',
+    'third_party/xiph/ogg/src/bitwise.c',
+    'third_party/xiph/opus/include/opus.h',
+    'third_party/xiph/opusfile/src/opusfile.c',
+    'tlottie/include/tlottie.h'
+)) {
+    if ($fetchUpstreamScript -notmatch [regex]::Escape($requiredNativeInput)) {
+        throw "Telegram upstream fetch does not verify required full-build input: $requiredNativeInput"
+    }
 }
 
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw
