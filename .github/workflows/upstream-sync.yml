@@ -136,8 +136,8 @@ jobs:
           $releaseRef = if ($changed) { '${{ steps.commit.outputs.sha }}' } else { (git rev-parse HEAD).Trim() }
           $tag = "v$($config.telegramVersion)-wsp.$revision"
 
-          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
-          $releaseExists = $LASTEXITCODE -eq 0
+          & gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          $releaseExists = $?
           $forced = $env:FORCE_RELEASE -eq 'true'
           $required = $changed -or $forced -or -not $releaseExists
 
@@ -149,6 +149,10 @@ jobs:
           Write-Host "Release exists: $releaseExists"
           Write-Host "Release required: $required"
           Write-Host "Release ref: $releaseRef"
+
+          # A missing release is expected on first publication. Do not propagate
+          # the non-zero exit code from 'gh release view' to the pwsh process.
+          exit 0
 
   release:
     name: Publish validated Telegram-WSP update
