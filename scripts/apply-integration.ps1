@@ -332,6 +332,14 @@ if ($coreBuild -notmatch [regex]::Escape('../.tgwsproxy/theme-assets')) {
     $coreBuild = $coreBuild.Replace($coreThemeAssetMarker, $coreThemeAssetBlock)
 }
 
+$jlatexProjectDependency = "    api project(':jlatexmath')"
+$jlatexAarDependency = "    api files('lib/jlatexmath/jlatexmath/build/outputs/aar/jlatexmath-release.aar')"
+if ($coreBuild -notmatch [regex]::Escape($jlatexAarDependency)) {
+    $count = ([regex]::Matches($coreBuild, [regex]::Escape($jlatexProjectDependency))).Count
+    if ($count -ne 1) { throw "Telegram jlatexmath dependency anchor count is $count; expected 1." }
+    $coreBuild = $coreBuild.Replace($jlatexProjectDependency, $jlatexAarDependency)
+}
+
 Set-Content -Path $coreBuildPath -Value $coreBuild -NoNewline
 
 $buildVarsPath = Join-Path $telegram 'TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java'
