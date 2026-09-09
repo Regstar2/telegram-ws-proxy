@@ -161,6 +161,13 @@ if ($syncUpstreamScript -notmatch 'master-ahead-without-version-bump') {
     throw 'Upstream sync must avoid publishing arbitrary master commits without a Telegram version bump.'
 }
 
+if ($syncUpstreamScript -match '\$LASTEXITCODE\s+-ne\s+0\s+-or\s+\[string\]::IsNullOrWhiteSpace\(\$remoteLine\)') {
+    throw 'Upstream sync must not depend on an uninitialized LASTEXITCODE under StrictMode.'
+}
+if ($syncUpstreamScript -notmatch '\$gitSucceeded\s*=\s*\$\?') {
+    throw 'Upstream sync must capture native git success through the automatic $? status.'
+}
+
 $sourcePackageScript = Get-Content (Join-Path $root 'scripts/package-release-source.ps1') -Raw
 if ($sourcePackageScript -notmatch 'Telegram-upstream-source' -or $sourcePackageScript -notmatch 'tgwsproxy-core-source' -or $sourcePackageScript -notmatch 'SOURCE_MANIFEST.json') {
     throw 'Release source packaging must include Telegram, tgwsproxy-core, overlay source and a source manifest.'
@@ -193,6 +200,13 @@ if ($releaseBootstrapScript -notmatch 'gh secret set' -or $releaseBootstrapScrip
 }
 if ($releaseBootstrapScript -notmatch 'keytool\.Source' -or $releaseBootstrapScript -notmatch 'gh run watch') {
     throw 'Release bootstrap script must verify the local keystore and wait for the dispatched Actions run.'
+}
+
+if ($releaseBootstrapScript -match '--jq') {
+    throw 'Release bootstrap must parse GitHub CLI JSON with ConvertFrom-Json instead of shell-sensitive --jq expressions.'
+}
+if ($releaseBootstrapScript -notmatch 'ConvertFrom-Json') {
+    throw 'Release bootstrap must parse GitHub CLI JSON natively in PowerShell.'
 }
 
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw

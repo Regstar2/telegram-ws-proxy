@@ -15,8 +15,10 @@ $branch = [string]$config.branch
 if ([string]::IsNullOrWhiteSpace($repository)) { throw 'Upstream repository is empty.' }
 if ([string]::IsNullOrWhiteSpace($branch)) { throw 'Upstream branch is empty.' }
 
-$remoteLine = (& git ls-remote $repository "refs/heads/$branch" | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($remoteLine)) {
+$remoteLines = @(& git ls-remote $repository "refs/heads/$branch")
+$gitSucceeded = $?
+$remoteLine = $remoteLines | Select-Object -First 1
+if (-not $gitSucceeded -or [string]::IsNullOrWhiteSpace($remoteLine)) {
     throw "Could not resolve upstream branch $branch."
 }
 $latestCommit = ($remoteLine -split '\s+')[0].Trim()
