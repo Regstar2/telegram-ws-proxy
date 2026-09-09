@@ -194,6 +194,13 @@ if ($upstreamWorkflow -notmatch 'Validate release secrets before changing main' 
     throw 'Upstream workflow must fail before changing main when release secrets are not configured.'
 }
 
+if (-not $upstreamWorkflow.Contains('$releaseExists = $?')) {
+    throw 'Upstream release decision must capture whether the GitHub Release exists.'
+}
+if (-not $upstreamWorkflow.Contains('exit 0')) {
+    throw 'Upstream release decision must clear the expected missing-release native exit code.'
+}
+
 $releaseBootstrapScript = Get-Content (Join-Path $root 'scripts/bootstrap-release-actions.ps1') -Raw
 if ($releaseBootstrapScript -notmatch 'gh secret set' -or $releaseBootstrapScript -notmatch 'gh workflow run') {
     throw 'Release bootstrap script must configure GitHub Secrets and dispatch the production upstream workflow.'
