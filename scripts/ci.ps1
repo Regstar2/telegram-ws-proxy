@@ -34,6 +34,7 @@ $required = @(
     'scripts/create-release-keystore.ps1',
     'scripts/sync-upstream.ps1',
     'scripts/package-release-source.ps1',
+    'scripts/bootstrap-release-actions.ps1',
     'scripts/diagnose-xiaomi-dark-mode.ps1',
     'scripts/ensure-telegram-theme-assets-lf.ps1',
     '.github/workflows/release.yml',
@@ -180,6 +181,18 @@ if ($releaseWorkflow -notmatch 'telegramBuild \* 1000' -or $releaseWorkflow -not
 $upstreamWorkflow = Get-Content (Join-Path $root '.github/workflows/upstream-sync.yml') -Raw
 if ($upstreamWorkflow -notmatch 'schedule:' -or $upstreamWorkflow -notmatch 'sync-upstream\.ps1 -Apply' -or $upstreamWorkflow -notmatch 'uses: \./\.github/workflows/release\.yml') {
     throw 'Upstream workflow must check Telegram on a schedule and call the reusable release workflow.'
+}
+
+if ($upstreamWorkflow -notmatch 'Validate release secrets before changing main' -or $upstreamWorkflow -notmatch 'RELEASE_KEYSTORE_BASE64') {
+    throw 'Upstream workflow must fail before changing main when release secrets are not configured.'
+}
+
+$releaseBootstrapScript = Get-Content (Join-Path $root 'scripts/bootstrap-release-actions.ps1') -Raw
+if ($releaseBootstrapScript -notmatch 'gh secret set' -or $releaseBootstrapScript -notmatch 'gh workflow run') {
+    throw 'Release bootstrap script must configure GitHub Secrets and dispatch the production upstream workflow.'
+}
+if ($releaseBootstrapScript -notmatch 'keytool\.Source' -or $releaseBootstrapScript -notmatch 'gh run watch') {
+    throw 'Release bootstrap script must verify the local keystore and wait for the dispatched Actions run.'
 }
 
 $prepareScript = Get-Content (Join-Path $root 'scripts/prepare-integration.ps1') -Raw

@@ -40,6 +40,20 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      - name: Validate release secrets before changing main
+        shell: pwsh
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          foreach ($name in @('RELEASE_KEYSTORE_BASE64', 'RELEASE_KEYSTORE_PASSWORD', 'TELEGRAM_API_ID', 'TELEGRAM_API_HASH')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Release automation is not configured. Missing GitHub Actions secret: $name"
+            }
+          }
+
       - name: Inspect Telegram upstream
         id: upstream
         shell: pwsh
