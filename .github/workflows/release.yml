@@ -79,13 +79,13 @@ jobs:
         run: |
           $tools = Join-Path $PWD '.tools'
           $zip = Join-Path $tools 'gradle-8.2.1-bin.zip'
-          $home = Join-Path $tools 'gradle-8.2.1'
+          $gradleHome = Join-Path $tools 'gradle-8.2.1'
           New-Item -ItemType Directory -Path $tools -Force | Out-Null
-          if (-not (Test-Path $home)) {
+          if (-not (Test-Path $gradleHome)) {
             Invoke-WebRequest 'https://services.gradle.org/distributions/gradle-8.2.1-bin.zip' -OutFile $zip
             Expand-Archive -Path $zip -DestinationPath $tools -Force
           }
-          "TGWSP_CORE_GRADLE=$home\bin\gradle.bat" >> $env:GITHUB_ENV
+          "TGWSP_CORE_GRADLE=$gradleHome\bin\gradle.bat" >> $env:GITHUB_ENV
 
       - name: Set up Gradle 8.11.1 for Telegram
         uses: gradle/actions/setup-gradle@v4

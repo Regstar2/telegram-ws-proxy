@@ -181,6 +181,13 @@ if ($releaseWorkflow -notmatch 'latest\.json' -or $releaseWorkflow -notmatch 'pa
     throw 'Release workflow must publish the update feed and Corresponding Source assets.'
 }
 
+if ($releaseWorkflow -match '(?m)^\s*\$home\s*=') {
+    throw 'Release workflow must not assign to PowerShell automatic HOME on Windows runners.'
+}
+if ($releaseWorkflow -notmatch '\$gradleHome\s*=\s*Join-Path') {
+    throw 'Release workflow must use a dedicated Gradle home variable for the tgwsproxy-core toolchain.'
+}
+
 if ($releaseWorkflow -notmatch 'telegramBuild \* 1000' -or $releaseWorkflow -notmatch 'TELEGRAM_WSP_RELEASE_REVISION') {
     throw 'Release workflow must build and publish the same revision-aware Android versionCode.'
 }
