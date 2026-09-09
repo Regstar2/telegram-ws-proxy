@@ -148,6 +148,18 @@ if ($buildApkScript -notmatch 'themeBytes -contains \[byte\]13') {
     throw 'scripts/build-apk.ps1 must reject packaged Telegram theme assets containing CR bytes.'
 }
 
+if ($buildApkScript -notmatch ':jlatexmath:assembleRelease' -or $buildApkScript -notmatch 'jlatexmath-release\.aar') {
+    throw 'scripts/build-apk.ps1 must prebuild the pinned jlatexmath AAR before the Telegram APK.'
+}
+
+$applyScript = Get-Content (Join-Path $root 'scripts/apply-integration.ps1') -Raw
+if ($applyScript -notmatch "api files\('lib/jlatexmath/jlatexmath/build/outputs/aar/jlatexmath-release\.aar'\)") {
+    throw 'Integration overlay must consume jlatexmath through its prebuilt AAR to avoid standalone variant matching failures.'
+}
+if ($applyScript -match "api project\(':jlatexmath'\)") {
+    throw 'Integration overlay must replace the direct jlatexmath project dependency.'
+}
+
 $buildCoreScript = Get-Content (Join-Path $root 'scripts/build-core.ps1') -Raw
 if ($buildCoreScript -notmatch 'TGWSP_CORE_GRADLE') {
     throw 'Core build script must support a dedicated Gradle 8.2.1 executable for release CI.'
